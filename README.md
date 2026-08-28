@@ -38,14 +38,16 @@ this if a single web app does.
 ## Install
 
 Download the latest `LucidTouchKiosk-*-arm64.zip` from
-[Releases](https://github.com/wearelucid/lucid-touch-kiosk/releases), unzip it,
-and move the app to `/Applications`.
+[Releases](https://github.com/wearelucid/lucid-touch-kiosk/releases) and unzip
+it. Put the app wherever suits the machine — the Desktop, or a folder of its
+own. Its `config.json` will appear next to it, so app and settings stay
+together and can be copied to the next kiosk as one folder.
 
 The app is **not signed or notarised**, so macOS quarantines it on download.
 Clear that flag once, in Terminal:
 
 ```sh
-xattr -dr com.apple.quarantine "/Applications/Lucid Touch Kiosk.app"
+xattr -dr com.apple.quarantine "path/to/Lucid Touch Kiosk.app"
 ```
 
 Then grant the permission the app needs to read the panel:
@@ -82,12 +84,19 @@ To quit a running kiosk, press ⌘Q.
 
 `config.json` is generated rather than shipped: setup writes it, the panel
 wizard updates it, and it describes one machine — which display, which panel,
-how it is mounted. Search order at launch, with the chosen file printed to the
-log:
+how it is mounted.
+
+It lives **next to the `.app`**, which is what makes a kiosk portable: move
+the folder to another machine and its configuration comes along. Search order
+at launch, first match wins, with the chosen file printed to the log:
 
 `$KIOSK_CONFIG` → next to the `.app` → `~/Library/Application Support/Lucid
-Touch Kiosk/` (in dev: the project root). To ship a preconfigured kiosk, place
-a `config.json` next to the `.app`.
+Touch Kiosk/`. In dev, the project root.
+
+The one exception is an **applications folder**. Loose files don't belong in
+`/Applications`, and it is writable only for admins — a standard account would
+silently end up elsewhere, so the same app would behave differently per
+account. Installed there, the config goes to Application Support for everyone.
 
 | Key / env | Default | Meaning |
 | --- | --- | --- |

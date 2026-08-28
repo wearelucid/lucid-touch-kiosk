@@ -98,10 +98,25 @@ function loadConfig(configPath) {
 // packaged .app → userData; project root in dev). Shared so anything else we
 // write alongside config.json — e.g. the raw HID descriptor dump — lands in
 // the same place, in both dev and packaged builds.
+/**
+ * Directories a generated file (config.json, hid-descriptors.json) may be
+ * written to, most-preferred first.
+ *
+ * Normally right beside the `.app`: put the app on the Desktop or in a
+ * deployment folder and its config sits next to it, visible, editable, and
+ * copied along when the folder is moved to another kiosk.
+ *
+ * The exception is an applications folder. Loose files never belong there, and
+ * it is writable only for admins — a standard account would silently fall back
+ * to userData, so the same app would behave differently per account. Installed
+ * there, the config goes to userData for everyone.
+ */
 function configDirCandidates() {
-  return app.isPackaged
-    ? [path.resolve(path.dirname(app.getPath('exe')), '../../../'), app.getPath('userData')]
-    : [app.getAppPath()]
+  if (!app.isPackaged) return [app.getAppPath()]
+  const userData = app.getPath('userData')
+  const beside = path.resolve(path.dirname(app.getPath('exe')), '../../../')
+  const appFolders = ['/Applications', path.join(app.getPath('home'), 'Applications')]
+  return appFolders.includes(beside) ? [userData] : [beside, userData]
 }
 
 function writeJsonFile(filename, obj) {
@@ -120,6 +135,18 @@ function writeJsonFile(filename, obj) {
 }
 
 function writeConfig(obj) {
+  // An explicitly pointed-at config is the one the operator means, so writes
+  // follow it instead of landing somewhere they'd have to go looking for.
+  if (process.env.KIOSK_CONFIG) {
+    const body = JSON.stringify(obj, null, 2) + '\n'
+    try {
+      fs.mkdirSync(path.dirname(process.env.KIOSK_CONFIG), { recursive: true })
+      fs.writeFileSync(process.env.KIOSK_CONFIG, body)
+      return process.env.KIOSK_CONFIG
+    } catch {
+      /* fall through to the normal candidates */
+    }
+  }
   return writeJsonFile('config.json', obj)
 }
 
