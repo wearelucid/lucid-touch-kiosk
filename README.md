@@ -1,119 +1,124 @@
 # lucid-touch-kiosk
 
-A fullscreen kiosk for macOS that loads one URL and drives it from a **USB HID
-touchscreen**. The app reads the panel's raw HID reports itself and injects them
-into its own Chromium renderer as **trusted touch** (in-process DevTools
-Protocol) — so any web page gets native momentum scrolling, sliders, pinch and
-multitouch, with no in-page code, no external browser, no debugging port.
+A fullscreen kiosk for macOS that loads one URL and drives it from a USB HID
+touchscreen. The app reads the panel's raw HID reports itself and injects them
+into its own Chromium renderer as trusted touch events, using the in-process
+DevTools Protocol. Pages get momentum scrolling, sliders, pinch and multitouch
+without any in-page code, and touch feels native.
 
 ## Why
 
-macOS has no touchscreen support: plug in a USB touch panel and the system
-ignores it, while Windows treats the same panel as a first-class multitouch
-device. The commercial drivers that bridge the gap emulate a *mouse* — one
-contact, no momentum, no pinch.
+macOS has no touchscreen support. A USB touch panel is ignored by the system,
+while Windows treats the same hardware as a multitouch device.
 
-This app skips the OS instead: `panel → node-hid → bit parser →
-Input.dispatchTouchEvent`. To the page, it's indistinguishable from an iPad.
+The commercial drivers that fill this gap work system-wide: every application
+becomes touchable. They achieve that by emulating a mouse, which is where the
+compromise sits — one contact at a time, no momentum scrolling, no pinch, and
+no real touch events for a web page to respond to.
+
+This app makes the opposite trade. Nothing else on the Mac gains touch; only
+the page this kiosk loads. Within that scope the support is complete, because
+the events are injected as trusted input rather than translated into mouse
+clicks: `panel → node-hid → bit parser → Input.dispatchTouchEvent`.
+
+So the question is which shape fits: a driver if the whole desktop needs touch,
+this if a single web app does.
 
 ## Requirements
 
-- **Mac with Apple Silicon** — built arm64-only; universal binaries break
+- **Mac with Apple Silicon.** Built arm64-only; universal binaries break
   node-hid's device opening.
-- **USB HID touchscreen** — Windows-Precision-style panels are profiled
+- **USB HID touchscreen.** Windows-Precision-style panels are profiled
   automatically by the built-in wizard; others can be
   [described by hand](#supporting-a-different-touchscreen).
-- **Input Monitoring permission** — macOS lets any process *list* HID devices
-  but not *open* one. Until granted, the panel shows up in every diagnostic and
-  delivers no touch. See [Build](#build-an-unsigned-app).
+- **Input Monitoring permission.** macOS lets any process list HID devices but
+  not open one. Until it is granted, the panel appears in every diagnostic and
+  delivers no touch. See [Install](#install).
 
-## Quick start
+## Install
 
-```sh
-npm install     # rebuilds node-hid for Electron's ABI
-npm start       # no config yet → interactive setup
-npm test        # unit tests for the report parser + layout derivation
-```
+Download the latest `LucidTouchKiosk-*-arm64.zip` from
+[Releases](https://github.com/wearelucid/lucid-touch-kiosk/releases), unzip it,
+and move the app to `/Applications`.
 
-First run walks you through setup:
+The app is **not signed or notarised**, so macOS blocks it on first launch:
 
-1. **Pick the display** the touchscreen is connected to.
-2. The **test page** opens there fullscreen: touch targets (tap, scroll, pinch,
-   drag), the [diagnostics panel](#when-touch-doesnt-work), and fields for
-   **URL**, **Zoom** and **Touch rotation**. Press **Launch** when it feels
-   right — a blank URL keeps the test page.
+1. Open it once and dismiss the warning.
+2. Go to **System Settings → Privacy & Security**, scroll to the bottom, and
+   press **Open Anyway** next to the blocked app.
+3. In the same pane, open **Input Monitoring** and enable Lucid Touch Kiosk.
+   Without it macOS refuses to let the app read the panel, and touch stays dead
+   while everything else looks fine.
+4. Relaunch. A permission granted while the app runs does not reach it.
 
-Every choice is persisted to `config.json` immediately.
+macOS 14+ also asks about Bluetooth, because node-hid scans it while
+enumerating devices. The panel is USB, so **Don't Allow** is fine.
 
-If node-hid throws `NODE_MODULE_VERSION`, run `npm run rebuild`.
+> If you prefer the terminal, `xattr -dr com.apple.quarantine "/Applications/Lucid Touch Kiosk.app"`
+> replaces steps 1 and 2.
 
-## Build an unsigned .app
+### First run
 
-```sh
-npm run dist    # → dist/mac-arm64/Lucid Touch Kiosk.app
-```
+1. Pick the display the touchscreen is connected to.
+2. The test page opens there fullscreen. It has touch targets (tap, scroll,
+   pinch, drag), the [diagnostics panel](#when-touch-doesnt-work), and fields
+   for URL, zoom and touch rotation. Press Launch to open the kiosk; a blank
+   URL keeps the test page.
 
-First launch:
+Each choice is written to `config.json` as it is made — see
+[Configuration](#configuration) for where that file lives.
 
-1. Clear quarantine: `xattr -dr com.apple.quarantine "dist/mac-arm64/Lucid Touch Kiosk.app"`
-   (or right-click → Open).
-2. Grant **Input Monitoring** (System Settings → Privacy & Security), then
-   relaunch — a grant issued while the app runs doesn't reach it.
-3. macOS 14+ also asks about **Bluetooth** (node-hid scans it during
-   enumeration). The panel is USB — **Don't Allow** is fine.
-
-The app is unsigned, so the Input Monitoring grant is bound to the exact binary:
-after a rebuild, remove and re-add the entry. Signing with a Developer ID would
-make both grants persist and drop the quarantine step.
+To quit a running kiosk, press ⌘Q.
 
 ## Configuration
 
-`config.json` is **generated, not shipped**: setup writes it, the panel wizard
-updates it, and it describes one machine (which display, which panel, how it's
-mounted). Search order at launch — the log prints which file won:
+`config.json` is generated rather than shipped: setup writes it, the panel
+wizard updates it, and it describes one machine — which display, which panel,
+how it is mounted. Search order at launch, with the chosen file printed to the
+log:
 
 `$KIOSK_CONFIG` → next to the `.app` → `~/Library/Application Support/Lucid
-Touch Kiosk/` (in dev: the project root). To ship a preconfigured kiosk, put a
-`config.json` next to the `.app`.
+Touch Kiosk/` (in dev: the project root). To ship a preconfigured kiosk, place
+a `config.json` next to the `.app`.
 
 | Key / env | Default | Meaning |
 | --- | --- | --- |
-| `url` / `KIOSK_URL` | `""` | Page to show. **Blank → the built-in test page.** |
+| `url` / `KIOSK_URL` | `""` | Page to show. Blank opens the built-in test page. |
 | `hidVendorId`, `hidProductId` | `0x0457`, `0x6595` (SiS) | Touchscreen USB ids |
 | `touchReport` | SiS layout | Bit layout of the touch report — [see below](#supporting-a-different-touchscreen) |
 | `touchRotation` / `TOUCH_ROTATION` | `null` = follow the display | `0`/`90`/`180`/`270` for a panel mounted sideways |
 | `displayIndex` / `DISPLAY_INDEX` | `1` | Monitor to open on (see `display[N]` in the startup log) |
 | `zoom` / `ZOOM` | `1` | Page zoom (`2.5` = 250%); touch stays aligned |
 | `maxTouchPoints` / `MAX_TOUCH_POINTS` | `10` | `1` disables multitouch entirely |
-| `allowPageZoom` / `ALLOW_PAGE_ZOOM` | `false` | `false` blocks pinch-zoom + overscroll bounce, keeps scroll and in-page multitouch |
+| `allowPageZoom` / `ALLOW_PAGE_ZOOM` | `false` | `false` blocks pinch-zoom and overscroll bounce, keeps scroll and in-page multitouch |
 
-### Rotated / portrait panels
+### Rotated and portrait panels
 
-A digitizer is bonded to its panel, so it reports in the panel's **unrotated**
-frame — rotate the display in macOS and the image turns while touch does not.
-The app corrects this automatically from the display's rotation; a
+A digitizer is bonded to its panel, so it reports in the panel's unrotated
+frame. Rotating the display in macOS turns the image but not the touch
+coordinates. The app reads the display's rotation and corrects for it, so a
 portrait-mounted panel needs no configuration.
 
-`touchRotation` (or the **Touch rotation** control on the test page, which
-applies immediately) overrides the automatic value — for the one case the rule
-can't cover: a touch foil mounted turned relative to its display. It lives
-outside `touchReport` because it describes the mounting, not the panel.
+`touchRotation` overrides that value, as does the Touch rotation control on the
+test page, which applies immediately. This covers the case the rule cannot: a
+touch foil mounted turned relative to its display. Rotation sits outside
+`touchReport` because it describes the mounting, not the panel.
 
 ### Supporting a different touchscreen
 
-Use the **panel wizard**: test page → **7 · Touch panel diagnostics** →
-**Details** → **Panel wizard**.
+Use the panel wizard: test page → 7 · Touch panel diagnostics → Details →
+Panel wizard.
 
-1. **Detect panel layout** — reads the panel's HID report descriptor via WebHID
+1. **Detect panel layout** reads the panel's HID report descriptor via WebHID
    (Chromium can parse it; node-hid on macOS cannot) and derives the
-   `touchReport` block. You get a JSON preview plus any warnings.
-2. **Save & use this layout** — writes ids + layout to `config.json` and
+   `touchReport` block, showing a JSON preview and any warnings.
+2. **Save & use this layout** writes the ids and layout to `config.json` and
    restarts the touch agent on the new panel.
-3. Touch the screen and check **Live reports** — parsed contacts confirm the
-   layout.
+3. Touch the screen and check Live reports. Parsed contacts confirm the layout.
 
-Verified end-to-end on a Samsung Flip (`25b5:0054`) — a useful second reference
-because its axes have different ranges, which is what `logicalMaxY` is for:
+Verified end-to-end on a Samsung Flip (`25b5:0054`), which is a useful second
+reference because its axes have different ranges — the case `logicalMaxY`
+exists for:
 
 ```json
 {
@@ -128,11 +133,11 @@ because its axes have different ranges, which is what `logicalMaxY` is for:
 }
 ```
 
-The wizard **rejects** panels whose contact blocks aren't evenly strided, or
-whose descriptor lacks a usable `logicalMaximum` — an explicit error instead of
-a silently broken layout. For those, press **Save raw descriptors** (writes
-every descriptor to `hid-descriptors.json` next to `config.json`) and hand-write
-the block:
+The wizard rejects panels whose contact blocks are not evenly strided, and
+descriptors without a usable `logicalMaximum`. Both produce an explicit error
+rather than a layout that would place every touch wrongly. In those cases,
+press Save raw descriptors, which writes every connected device's descriptor to
+`hid-descriptors.json` next to `config.json`, and write the block by hand:
 
 | Field | Meaning |
 | --- | --- |
@@ -140,50 +145,68 @@ the block:
 | `maxContacts` | max simultaneous fingers in one report |
 | `strideBits` | bit distance between contact blocks |
 | `tipOffset` | tip-switch bit within a block |
-| `contactIdOffset`, `contactIdBits` | contact-id field (`null` → use the finger index) |
-| `xOffset`, `yOffset`, `coordBits` | X/Y field offsets + bit width |
-| `logicalMax`, `logicalMaxY` | full-scale X (and Y, unless `logicalMaxY` differs) |
+| `contactIdOffset`, `contactIdBits` | contact-id field (`null` uses the finger index) |
+| `xOffset`, `yOffset`, `coordBits` | X/Y field offsets and bit width |
+| `logicalMax`, `logicalMaxY` | full-scale X, and Y when it differs |
 
-> WebHID is granted only to the app's own bundled pages — a remote kiosk URL
+> WebHID is granted only to the app's own bundled pages. A remote kiosk URL
 > never gets raw HID access.
 
 ## When touch doesn't work
 
-The test page's **diagnostics section** answers, without a terminal: is the
-panel listed (digitizers marked `⌖`, the configured one highlighted), is Input
-Monitoring granted (proven by opening a reference keyboard/mouse — failure there
-is a global denial, not a panel problem), did the panel open, and is the layout
-right. Every failure comes with its fix, plus buttons to open the Input
-Monitoring settings, re-scan, or relaunch.
+The diagnostics section of the test page answers four questions without a
+terminal: whether the panel is listed (digitizers are marked `⌖`, the
+configured one is highlighted), whether Input Monitoring is granted, whether
+the panel could be opened, and whether the layout is right. The permission is
+tested by opening a reference keyboard or mouse — a failure there is a global
+denial rather than a panel problem. Each failure state names its remedy, and
+buttons open the Input Monitoring settings, re-scan, or relaunch.
 
-The **live report feed** separates the cases a device list can't:
+The live report feed separates cases a device list cannot:
 
 | You see | It means |
 | --- | --- |
 | Parsed contacts with sensible coordinates | Working. |
-| Bytes arriving, `contacts: null` | Panel fine, layout wrong — `reportId` mismatch or a field size out of range. |
-| Bytes arriving, `0 contacts` while touching | Tip-switch offset wrong. |
+| Bytes arriving, `contacts: null` | Panel fine, layout wrong: `reportId` mismatch or a field size out of range. |
+| Bytes arriving, `0 contacts` while touching | Tip-switch offset is wrong. |
 | No reports, status red | Not a layout problem — read the status hint (permission or cable). |
 
-On a configured kiosk, blank out `url` to get back to the test page.
-`DIAGNOSE=1` prints all HID devices to stdout (run the packaged binary from
-Terminal to see it).
+On a configured kiosk, blank out `url` to return to the test page. `DIAGNOSE=1`
+prints all HID devices to stdout; run the packaged binary from Terminal to see
+it.
 
-If a panel won't come up, keep three things and it can be profiled later
-without the hardware: `hid-descriptors.json` (**Save raw descriptors**), the
-`DIAGNOSE=1` output, and what the status line and live reports said.
+If a panel cannot be brought up, three things allow profiling it later without
+the hardware: `hid-descriptors.json` from Save raw descriptors, the `DIAGNOSE=1`
+output, and what the status line and live reports showed.
+
+## Build from source
+
+```sh
+npm install     # rebuilds node-hid for Electron's ABI
+npm start       # run from source; no config yet → interactive setup
+npm test        # unit tests for the report parser and layout derivation
+npm run dist    # → dist/mac-arm64/Lucid Touch Kiosk.app
+```
+
+If node-hid throws `NODE_MODULE_VERSION`, run `npm run rebuild`.
+
+A locally built app is unsigned too, so it needs the same unblocking as a
+downloaded one. The Input Monitoring grant is bound to the exact binary, so
+after each `npm run dist` the entry has to be removed and re-added. Signing
+with an Apple Developer ID would make both grants persist and remove the
+Gatekeeper step entirely.
 
 ## How it works
 
 `finger → panel → USB HID → node-hid → parse.js (layout-driven bit reader) →
 diff to touchStart/Move/End → webContents.debugger →
-Input.dispatchTouchEvent → renderer`. The page is a normal web page; it never
-knows a USB panel drives it. The agent injects `touch-action: pan-x pan-y` and
-`overscroll-behavior: none` on every document (plus
-`setVisualZoomLevelLimits(1,1)`) to suppress page pinch-zoom and rubber-banding
-while keeping scroll and multitouch.
+Input.dispatchTouchEvent → renderer`. The renderer runs an ordinary web page
+with no knowledge of the panel. On every document the agent sets
+`touch-action: pan-x pan-y` and `overscroll-behavior: none`, and the window
+uses `setVisualZoomLevelLimits(1,1)`, to suppress page pinch-zoom and
+rubber-banding while keeping scroll and multitouch.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Bundled fonts (Space Grotesk, Instrument Serif)
-are under the SIL Open Font License, included in `src/fonts/`.
+MIT — see [LICENSE](LICENSE). The bundled fonts (Space Grotesk, Instrument
+Serif) are under the SIL Open Font License, included in `src/fonts/`.
