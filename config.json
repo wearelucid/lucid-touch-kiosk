@@ -4,7 +4,7 @@
   "hidProductId": 26005,
   "maxTouchPoints": 10,
   "allowPageZoom": false,
-  "displayIndex": 1,
+  "displayIndex": 2,
   "zoom": 1,
   "touchReport": {
     "reportId": 145,
@@ -17,5 +17,6 @@
     "yOffset": 32,
     "coordBits": 16,
     "logicalMax": 4095
-  }
+  },
+  "touchRotation": null
 }

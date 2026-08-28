@@ -11,6 +11,7 @@ const { app, BrowserWindow, screen, ipcMain, shell, session } = require('electro
 const fs = require('node:fs')
 const path = require('node:path')
 const { startTouchAgent } = require('./touch-agent')
+const { resolveRotation } = require('./parse')
 const { deriveFromDevices } = require('./derive')
 
 const log = (...a) => console.log('[kiosk]', ...a)
@@ -24,6 +25,7 @@ const DEFAULTS = {
   allowPageZoom: false,
   displayIndex: 1,
   zoom: 1,
+  touchRotation: null, // null = follow the display's rotation; 0|90|180|270 overrides
 }
 
 const TEST_PAGE = path.join(__dirname, 'testpage.html')
@@ -77,6 +79,7 @@ function applyEnv(cfg) {
   if (process.env.ALLOW_PAGE_ZOOM) cfg.allowPageZoom = true
   if (process.env.DISPLAY_INDEX) cfg.displayIndex = Number(process.env.DISPLAY_INDEX)
   if (process.env.ZOOM) cfg.zoom = Number(process.env.ZOOM)
+  if (process.env.TOUCH_ROTATION) cfg.touchRotation = Number(process.env.TOUCH_ROTATION)
   return cfg
 }
 
@@ -123,6 +126,7 @@ function writeConfig(obj) {
 let win = null
 let agent = null
 let pending = null // config-in-progress during setup
+let displayRotation = 0 // of the display the kiosk window sits on
 
 // --- kiosk / test window ---------------------------------------------------
 
@@ -185,8 +189,18 @@ function createKioskWindow(config, { test } = {}) {
   // reference would then tear down the brand-new agent instead of the dead
   // one, silently killing touch and turning kiosk:rescan into a no-op.
   let ownAgent = null
+  // The digitizer reports in the panel's unrotated frame, so a rotated display
+  // needs the same rotation applied to the touch — read it rather than making
+  // the operator find it by trial and error.
+  displayRotation = display.rotation || 0
+  const agentConfig = { ...config, touchRotation: resolveRotation(config.touchRotation, displayRotation) }
+  log(
+    'touch rotation:',
+    agentConfig.touchRotation + '°',
+    config.touchRotation == null ? '(from display)' : '(from config)',
+  )
   const startAgent = () => {
-    ownAgent = startTouchAgent(wc, config, log, onDiag)
+    ownAgent = startTouchAgent(wc, agentConfig, log, onDiag)
     agent = ownAgent
   }
   const stopOwnAgent = () => {
@@ -213,7 +227,11 @@ function createKioskWindow(config, { test } = {}) {
 
   if (test) {
     next.loadFile(TEST_PAGE, {
-      query: { url: config.url || '', zoom: String(config.zoom || 1) },
+      query: {
+        url: config.url || '',
+        zoom: String(config.zoom || 1),
+        rot: config.touchRotation == null ? 'auto' : String(config.touchRotation),
+      },
     })
   } else {
     next.loadURL(normalizeUrl(config.url))
@@ -294,6 +312,13 @@ ipcMain.handle('kiosk:save', (_e, p = {}) => {
   if (typeof p.url === 'string') pending.url = p.url.trim()
   if (p.zoom) pending.zoom = Number(p.zoom) || 1
   if (Number.isInteger(p.displayIndex)) pending.displayIndex = p.displayIndex
+  if ('touchRotation' in p) {
+    // null puts it back to following the display; a number overrides. Applied
+    // to the running agent too, so the operator can try a value and touch the
+    // screen straight away instead of relaunching between attempts.
+    pending.touchRotation = p.touchRotation == null ? null : Number(p.touchRotation) || 0
+    if (agent) agent.setRotation(resolveRotation(pending.touchRotation, displayRotation))
+  }
   const written = writeConfig(pending)
   log('saved config', written, '·', JSON.stringify({ url: pending.url, zoom: pending.zoom }))
   return { ok: true, written }

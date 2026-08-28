@@ -24,19 +24,18 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "node-hid": "^3.1.2"
+    "node-hid": "^3.4.0"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.0",
-    "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
+    "@electron/rebuild": "^4.2.0",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "ch.wearelucid.touch-kiosk",
     "productName": "Lucid Touch Kiosk",
     "files": [
       "src/**/*",
-      "config.json",
       "package.json"
     ],
     "asarUnpack": [

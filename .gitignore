@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.log
 .DS_Store
+
+# generated at first run (display picker / panel wizard) — machine-specific
+config.json

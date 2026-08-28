@@ -35,6 +35,7 @@
   .cfgbar input { background: #0d141d; color: #d7e0ea; border: 1px solid #34465a; border-radius: 6px; padding: 9px; font: inherit; }
   .cfgbar #cfg-url { width: 340px; max-width: 60vw; }
   .cfgbar #cfg-zoom { width: 80px; }
+  .cfgbar select { background: #0d141d; color: #d7e0ea; border: 1px solid #34465a; border-radius: 6px; padding: 9px; font: inherit; }
   .cfgbar #launch { background: #2f81f7; color: #fff; border: 0; padding: 10px 20px; }
   .dragpad { position: relative; height: 180px; touch-action: none; overflow: hidden; border: 1px dashed #34465a; border-radius: 6px; background: #0d141d; }
   .dragbox { position: absolute; left: 16px; top: 16px; width: 80px; height: 80px; border-radius: 8px; background: #2f81f7; color: #fff; display: flex; align-items: center; justify-content: center; user-select: none; touch-action: none; }
@@ -95,6 +96,14 @@
   <div class="cfgbar">
     <label>URL <input id="cfg-url" placeholder="blank = keep test page" /></label>
     <label>Zoom <input id="cfg-zoom" type="number" min="0.5" max="5" step="0.25" value="1" /></label>
+    <label>Touch rotation
+      <select id="cfg-rot">
+        <option value="auto">Auto (display)</option>
+        <option value="0">0°</option>
+        <option value="90">90°</option>
+        <option value="180">180°</option>
+        <option value="270">270°</option>
+      </select></label>
     <button id="launch">Launch ▶</button>
     <span id="launch-msg" class="dim"></span>
   </div>
@@ -231,6 +240,13 @@
   applyZoom() // reflect the prefilled zoom on load
   // persist url/zoom to config.json as soon as they change (not only on Launch)
   const save = (partial) => { if (window.lucidKiosk && window.lucidKiosk.save) window.lucidKiosk.save(partial) }
+  if (q.get('rot')) $('cfg-rot').value = q.get('rot')
+  // Takes effect on the running agent immediately — touch a corner, and if it
+  // lands wrong pick the next value. No relaunch, no config editing.
+  $('cfg-rot').addEventListener('change', () => {
+    const v = $('cfg-rot').value
+    save({ touchRotation: v === 'auto' ? null : Number(v) })
+  })
   $('cfg-zoom').addEventListener('change', () => save({ zoom: parseFloat($('cfg-zoom').value) || 1 }))
   $('cfg-url').addEventListener('change', () => save({ url: $('cfg-url').value.trim() }))
   $('launch').addEventListener('click', () => {

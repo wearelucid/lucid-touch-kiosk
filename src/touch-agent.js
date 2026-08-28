@@ -4,7 +4,7 @@
 // would on a real touch device.
 
 const HID = require('node-hid')
-const { parseContacts, SIS_LAYOUT } = require('./parse')
+const { parseContacts, rotate, SIS_LAYOUT } = require('./parse')
 
 // Injected on every document: block page pinch-zoom + rubber-band bounce while
 // keeping scroll AND in-site multitouch (touch events still reach the page).
@@ -93,7 +93,9 @@ function startTouchAgent(webContents, config, log, onDiag) {
   if (process.env.DIAGNOSE) listDevices(log)
   // Touch-report layout: config.touchReport if present, else the SiS default.
   const layout = config.touchReport || undefined
+  let rotation = Number(config.touchRotation) || 0
   log('touch layout:', layout ? 'from config.touchReport' : 'built-in SiS default')
+  if (rotation) log('touch rotation:', rotation + '°')
 
   const diag = onDiag
     ? (type, data) => {
@@ -172,11 +174,12 @@ function startTouchAgent(webContents, config, log, onDiag) {
   }
 
   const toEvent = (contacts) => {
-    const cur = contacts.map((c) => ({
-      id: c.id,
-      x: Math.round(c.nx * vp.w),
-      y: Math.round(c.ny * vp.h),
-    }))
+    const cur = contacts.map((c) => {
+      // Rotate first, scale second: the panel's frame is normalized, the
+      // viewport's is not, so swapping axes after scaling would stretch them.
+      const r = rotate(c.nx, c.ny, rotation)
+      return { id: c.id, x: Math.round(r.nx * vp.w), y: Math.round(r.ny * vp.h) }
+    })
     const curMap = new Map(cur.map((p) => [p.id, p]))
     let type = null
     if (cur.some((p) => !prev.has(p.id))) type = 'touchStart'
@@ -301,6 +304,15 @@ function startTouchAgent(webContents, config, log, onDiag) {
     .catch((err) => log('init failed:', err.message))
 
   return {
+    /**
+     * Change the mounting rotation without restarting the agent — the operator
+     * is standing at the panel trying values, and a restart would cost the
+     * device handle and the debugger attachment for every attempt.
+     */
+    setRotation(deg) {
+      rotation = Number(deg) || 0
+      log('touch rotation:', rotation + '°')
+    },
     /** Retry immediately instead of waiting out the 2s backoff. */
     rescan() {
       if (stopped) return

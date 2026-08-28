@@ -99,4 +99,57 @@ function parseContacts(buf, layout = SIS_LAYOUT) {
   return contacts
 }
 
-module.exports = { SIS_LAYOUT, readBits, parseContacts }
+/**
+ * Turn a normalized contact from the panel's frame into the screen's.
+ *
+ * A panel mounted sideways — or a display rotated in macOS while the panel
+ * keeps reporting in its native orientation — needs this before the contact is
+ * scaled to the viewport. Rotation is a property of the installation, not of
+ * the report layout, which is why it lives outside `touchReport`.
+ *
+ * Anything other than 0/90/180/270 is treated as 0: a kiosk that maps touches
+ * to the wrong place is easier to diagnose than one that mangles them by an
+ * arbitrary angle, and the aspect ratio makes non-right angles meaningless in
+ * normalized space anyway.
+ *
+ * @param {number} nx 0..1 along the panel's X axis
+ * @param {number} ny 0..1 along the panel's Y axis
+ * @param {number} [deg] 0 | 90 | 180 | 270, clockwise
+ * @returns {{nx: number, ny: number}}
+ */
+function rotate(nx, ny, deg) {
+  switch (deg) {
+    case 90:
+      return { nx: 1 - ny, ny: nx }
+    case 180:
+      return { nx: 1 - nx, ny: 1 - ny }
+    case 270:
+      return { nx: ny, ny: 1 - nx }
+    default:
+      return { nx, ny }
+  }
+}
+
+const ROTATIONS = [0, 90, 180, 270]
+
+/**
+ * Decide the mounting rotation: an explicit config value wins, otherwise
+ * follow the display.
+ *
+ * A touchscreen's digitizer is bonded to the panel, so it reports in the
+ * panel's unrotated frame no matter what the OS does with the image. Rotating
+ * the display therefore always calls for the same rotation on the touch side,
+ * and the OS already knows the angle — asking the operator for it would be
+ * asking for something we can read. The override exists for the case the rule
+ * doesn't cover: a separate touch foil mounted turned relative to its display.
+ *
+ * @param {number|null|undefined} configured `touchRotation` from config.json
+ * @param {number} [displayRotation] degrees reported by the OS for the display
+ * @returns {number} 0 | 90 | 180 | 270
+ */
+function resolveRotation(configured, displayRotation) {
+  if (ROTATIONS.includes(configured)) return configured
+  return ROTATIONS.includes(displayRotation) ? displayRotation : 0
+}
+
+module.exports = { SIS_LAYOUT, readBits, parseContacts, rotate, resolveRotation }
