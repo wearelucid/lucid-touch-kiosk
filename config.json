@@ -1,0 +1,21 @@
+{
+  "url": "",
+  "hidVendorId": 1111,
+  "hidProductId": 26005,
+  "maxTouchPoints": 10,
+  "allowPageZoom": false,
+  "displayIndex": 1,
+  "zoom": 1,
+  "touchReport": {
+    "reportId": 145,
+    "maxContacts": 5,
+    "strideBits": 80,
+    "tipOffset": 0,
+    "contactIdOffset": 8,
+    "contactIdBits": 8,
+    "xOffset": 16,
+    "yOffset": 32,
+    "coordBits": 16,
+    "logicalMax": 4095
+  }
+}

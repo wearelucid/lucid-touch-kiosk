@@ -1,0 +1,61 @@
+{
+  "name": "lucid-touch-kiosk",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wearelucid/lucid-touch-kiosk.git"
+  },
+  "homepage": "https://github.com/wearelucid/lucid-touch-kiosk#readme",
+  "bugs": {
+    "url": "https://github.com/wearelucid/lucid-touch-kiosk/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "author": "Lucid GmbH (https://wearelucid.ch)",
+  "description": "Single-app touch kiosk: an Electron shell that loads a URL and drives it from a USB HID touchscreen by injecting real touch via the in-process DevTools Protocol (webContents.debugger). Bundles Chromium; no external browser, no debugging port.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "electron-rebuild -f -w node-hid",
+    "postinstall": "electron-rebuild -f -w node-hid",
+    "dist": "electron-builder",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "node-hid": "^3.1.2"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "ch.wearelucid.touch-kiosk",
+    "productName": "Lucid Touch Kiosk",
+    "files": [
+      "src/**/*",
+      "config.json",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/node-hid/**"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "category": "public.app-category.utilities",
+      "extendInfo": {
+        "NSBluetoothAlwaysUsageDescription": "Not used. The HID library enumerates input devices, which touches the Bluetooth API on macOS; you can deny this — the USB touchscreen still works."
+      }
+    }
+  }
+}

@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lucid Touch Kiosk — Test Page</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font: 14px ui-monospace, Menlo, monospace;
+    background: #0b0f14; color: #d7e0ea; padding: 8px 8px 40px;
+  }
+  h1 { font-size: 18px; }
+  h2 { font-size: 14px; color: #9fb6cd; margin: 0 0 6px; }
+  .bar {
+    position: sticky; top: 0; z-index: 50; background: #101722;
+    border: 1px solid #21303f; border-radius: 8px; padding: 8px 10px;
+    display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px;
+  }
+  .bar b { color: #5cff9d; }
+  .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); margin-top: 10px; }
+  section { background: #101722; border: 1px solid #21303f; border-radius: 8px; padding: 12px; }
+  button { font: inherit; cursor: pointer; background: #1d2a38; color: #d7e0ea; border: 1px solid #34465a; border-radius: 6px; }
+  .taps { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .taps .xs { width: 30px; height: 30px; padding: 0; font-size: 9px; }
+  .taps .md { padding: 12px 18px; }
+  .taps .lg { padding: 22px 30px; font-size: 16px; }
+  .scroll { height: 220px; overflow-y: auto; border: 1px solid #34465a; border-radius: 6px; background: #0d141d; touch-action: pan-y; }
+  .item { padding: 11px 12px; border-bottom: 1px solid #1b2733; }
+  .pinchpad { height: 240px; touch-action: none; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px dashed #34465a; border-radius: 6px; background: #0d141d; }
+  .pinchbox { width: 110px; height: 110px; border-radius: 10px; background: #2f81f7; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; user-select: none; }
+  .bigpad { position: relative; overflow: hidden; height: 180px; touch-action: none; display: flex; align-items: center; justify-content: center; color: #6b7a89; border: 1px dashed #34465a; border-radius: 6px; background: #0d141d; user-select: none; }
+  .cfgbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: #101722; border: 1px solid #2f81f7; border-radius: 8px; padding: 12px; margin: 10px 0; }
+  .cfgbar input { background: #0d141d; color: #d7e0ea; border: 1px solid #34465a; border-radius: 6px; padding: 9px; font: inherit; }
+  .cfgbar #cfg-url { width: 340px; max-width: 60vw; }
+  .cfgbar #cfg-zoom { width: 80px; }
+  .cfgbar #launch { background: #2f81f7; color: #fff; border: 0; padding: 10px 20px; }
+  .dragpad { position: relative; height: 180px; touch-action: none; overflow: hidden; border: 1px dashed #34465a; border-radius: 6px; background: #0d141d; }
+  .dragbox { position: absolute; left: 16px; top: 16px; width: 80px; height: 80px; border-radius: 8px; background: #2f81f7; color: #fff; display: flex; align-items: center; justify-content: center; user-select: none; touch-action: none; }
+  .dragbox.active { background: #5cff9d; color: #042; }
+  .corner { position: fixed; z-index: 9000; width: 78px; height: 46px; font: 11px ui-monospace, monospace; background: #1b2a1b; color: #9f9; border: 1px solid #3a5; border-radius: 6px; }
+  .corner.tl { top: 6px; left: 6px; } .corner.tr { top: 6px; right: 6px; }
+  .corner.bl { bottom: 6px; left: 6px; } .corner.br { bottom: 6px; right: 6px; }
+  .corner.cc { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+  .corner.hit { background: #14502a; color: #7cff9d; }
+  label.rng { display: flex; align-items: center; gap: 8px; }
+  input[type=range] { touch-action: none; flex: 1; }
+  .crosshair { position: fixed; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 2px solid #5cff9d; border-radius: 50%; pointer-events: none; z-index: 9999; box-shadow: 0 0 12px #5cff9d88; }
+  .dot { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border: 3px solid #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; background: rgba(0,0,0,.35); pointer-events: none; z-index: 9998; }
+  .dim { color: #6b7a89; }
+  /* --- panel diagnostics --------------------------------------------------- */
+  #diag { margin-top: 10px; }
+  #diag h3 { font-size: 12px; color: #9fb6cd; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .06em; }
+  /* generous hit area — this gets tapped with a finger, not clicked with a mouse */
+  #diag summary { margin-top: 10px; padding: 12px 10px; cursor: pointer; color: #9fb6cd;
+    background: #0d141d; border: 1px solid #21303f; border-radius: 6px; user-select: none; }
+  #diag summary:hover { border-color: #2f81f7; }
+  #diag details[open] summary { margin-bottom: 12px; }
+  .dstat { padding: 10px 12px; border-radius: 6px; font-size: 15px; border: 1px solid #34465a; background: #0d141d; }
+  .dstat.ok { border-color: #3a5; background: #14261b; color: #7cff9d; }
+  .dstat.bad { border-color: #a33; background: #2a1414; color: #ff9d9d; }
+  #d-hint { margin-top: 6px; line-height: 1.5; }
+  #d-hint:empty { display: none; }
+  .dperm { margin-top: 6px; font-size: 13px; }
+  .dperm:empty { display: none; }
+  .dperm b.granted { color: #7cff9d; }
+  .dperm b.denied { color: #ff9d9d; }
+  .dperm b.unknown { color: #ffd08a; }
+  #d-actions { display: none; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  #d-actions.on { display: flex; }
+  #d-actions button { padding: 12px 16px; }
+  #d-actions #d-open-im { background: #2f81f7; color: #fff; border: 0; }
+  .dcols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  #d-devs { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #d-devs td { padding: 3px 8px 3px 0; border-bottom: 1px solid #1b2733; white-space: nowrap; }
+  #d-devs td.nm { white-space: normal; color: #9fb6cd; }
+  #d-devs tr.match td { color: #7cff9d; }
+  #d-devs tr.digi td:first-child::after { content: ' ⌖'; color: #2f81f7; }
+  #diag pre { margin: 0; padding: 8px; background: #0d141d; border: 1px solid #21303f; border-radius: 6px;
+    font: 11px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all; color: #9fb6cd; }
+  .dparsed { padding: 8px; border-radius: 6px; background: #0d141d; border: 1px solid #21303f; margin-bottom: 6px; }
+  .dparsed.warn { border-color: #a83; color: #ffd08a; }
+  #d-wizard { margin-top: 16px; }
+  #d-wizard #w-save { background: #2f81f7; color: #fff; border: 0; }
+  #d-wizard pre { margin-top: 8px; }
+  /* deriveFromDevices() joins per-device errors with \n — keep them one per line */
+  #w-msg { white-space: pre-line; }
+</style>
+</head>
+<body>
+  <h1>Lucid Touch Kiosk — Test &amp; Setup</h1>
+  <p class="dim">Test touch below. Set the kiosk URL + zoom and press Launch (blank URL keeps this test page).</p>
+
+  <div class="cfgbar">
+    <label>URL <input id="cfg-url" placeholder="blank = keep test page" /></label>
+    <label>Zoom <input id="cfg-zoom" type="number" min="0.5" max="5" step="0.25" value="1" /></label>
+    <button id="launch">Launch ▶</button>
+    <span id="launch-msg" class="dim"></span>
+  </div>
+
+  <div class="bar">
+    <span>last: <b id="t-type">—</b></span>
+    <span>@ <b id="t-xy">0,0</b></span>
+    <span>down <b id="c-down">0</b></span>
+    <span>move <b id="c-move">0</b></span>
+    <span>up <b id="c-up">0</b></span>
+    <span>click <b id="c-click">0</b></span>
+    <span>fingers <b id="c-fingers">0</b> (max <b id="c-max">0</b>)</span>
+    <span class="dim">viewport <b id="t-vp">—</b> · dpr <b id="t-dpr">—</b></span>
+  </div>
+
+  <div class="grid">
+    <section>
+      <h2>1 · Tap targets</h2>
+      <div class="taps">
+        <button class="xs" data-tap="xs">xs <span>0</span></button>
+        <button class="md" data-tap="md">md <span>0</span></button>
+        <button class="lg" data-tap="lg">lg <span>0</span></button>
+      </div>
+      <p class="dim">A tap must increment the count (proves tap → click).</p>
+    </section>
+
+    <section>
+      <h2>2 · Scroll + momentum</h2>
+      <div class="scroll" id="scroll"></div>
+    </section>
+
+    <section>
+      <h2>3 · Multitouch — live fingers</h2>
+      <div class="bigpad">touch here with several fingers</div>
+      <p class="dim">Each finger gets a numbered dot — shown only inside this box.</p>
+    </section>
+
+    <section>
+      <h2>4 · Pinch &amp; rotate</h2>
+      <div class="pinchpad">
+        <div class="pinchbox" id="pinchbox">1.00×<br><span id="rot">0</span>°</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>5 · Range slider</h2>
+      <label class="rng">val <b id="rngval">50</b>
+        <input type="range" id="rng" min="0" max="100" value="50" /></label>
+    </section>
+
+    <section>
+      <h2>6 · Drag &amp; drop</h2>
+      <div class="dragpad"><div class="dragbox" id="dragbox">drag me</div></div>
+      <p class="dim">Press and drag the box (pointerdown + window pointermove).</p>
+    </section>
+  </div>
+
+  <section id="diag">
+    <h2>7 · Touch panel diagnostics</h2>
+    <!-- Status (and, on failure, the fix) stays visible; the detail is folded away. -->
+    <div id="d-status" class="dstat">waiting for the touch agent…</div>
+    <div id="d-perm" class="dperm"></div>
+    <div id="d-hint" class="dim"></div>
+    <div id="d-actions">
+      <button id="d-open-im">Open Input Monitoring settings</button>
+      <button id="d-rescan">Re-scan now</button>
+      <button id="d-relaunch">Relaunch app</button>
+      <span id="d-act-msg" class="dim"></span>
+    </div>
+    <details>
+      <summary>Details — HID devices, live reports, active layout</summary>
+      <div class="dcols">
+        <div>
+          <h3>HID devices <span class="dim" id="d-count"></span></h3>
+          <table id="d-devs"><tbody></tbody></table>
+          <p class="dim">⌖ = digitizer interface (usage 0d/04). Green = matches the configured ids.</p>
+        </div>
+        <div>
+          <h3>Live reports <span class="dim">— touch the panel</span></h3>
+          <div class="dparsed" id="d-parsed">no reports received yet</div>
+          <pre id="d-hex">—</pre>
+          <p class="dim"><b id="d-rate">0</b> reports/s · <b id="d-seq">0</b> total (display throttled to ~10/s)</p>
+          <h3>Active layout</h3>
+          <pre id="d-layout">—</pre>
+        </div>
+      </div>
+      <div id="d-wizard">
+        <h3>Panel wizard — derive a layout from the descriptor</h3>
+        <p class="dim">For an unknown panel: Chromium parses the HID report descriptor (node-hid on macOS
+          cannot), and the derived <code>touchReport</code> can be saved straight to config.json.</p>
+        <div class="taps">
+          <button id="w-detect" class="md">Detect panel layout</button>
+          <button id="w-save" class="md" hidden>Save &amp; use this layout</button>
+          <button id="w-dump" class="md">Save raw descriptors</button>
+          <span id="w-msg" class="dim"></span>
+        </div>
+        <pre id="w-out" hidden></pre>
+      </div>
+    </details>
+  </section>
+
+  <!-- viewport-corner calibration targets: tap each, it shows the px gap from centre -->
+  <button class="corner tl" data-c="TL">TL</button>
+  <button class="corner tr" data-c="TR">TR</button>
+  <button class="corner bl" data-c="BL">BL</button>
+  <button class="corner br" data-c="BR">BR</button>
+  <button class="corner cc" data-c="C">C</button>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id)
+  const counts = { down: 0, move: 0, up: 0, click: 0 }
+  let maxFingers = 0
+
+  // fill scroll list + tap counters
+  const sc = $('scroll')
+  for (let i = 1; i <= 60; i++) { const d = document.createElement('div'); d.className = 'item'; d.textContent = 'row ' + i; sc.appendChild(d) }
+  document.querySelectorAll('[data-tap]').forEach((b) => {
+    let n = 0
+    b.addEventListener('click', () => { n++; b.querySelector('span').textContent = n })
+  })
+  $('rng').addEventListener('input', (e) => { $('rngval').textContent = e.target.value })
+
+  // config bar: prefill from query (?url=&zoom=), Launch via the preload bridge
+  const q = new URLSearchParams(location.search)
+  if (q.get('url')) $('cfg-url').value = q.get('url')
+  if (q.get('zoom')) $('cfg-zoom').value = q.get('zoom')
+  // live zoom preview — applies to this page as you change the field
+  const applyZoom = () => {
+    const z = parseFloat($('cfg-zoom').value) || 1
+    if (window.lucidKiosk && window.lucidKiosk.setZoom) window.lucidKiosk.setZoom(z)
+  }
+  $('cfg-zoom').addEventListener('input', applyZoom)
+  applyZoom() // reflect the prefilled zoom on load
+  // persist url/zoom to config.json as soon as they change (not only on Launch)
+  const save = (partial) => { if (window.lucidKiosk && window.lucidKiosk.save) window.lucidKiosk.save(partial) }
+  $('cfg-zoom').addEventListener('change', () => save({ zoom: parseFloat($('cfg-zoom').value) || 1 }))
+  $('cfg-url').addEventListener('change', () => save({ url: $('cfg-url').value.trim() }))
+  $('launch').addEventListener('click', () => {
+    const url = $('cfg-url').value.trim()
+    const zoom = parseFloat($('cfg-zoom').value) || 1
+    if (window.lucidKiosk && window.lucidKiosk.launch) {
+      $('launch-msg').textContent = url ? 'launching ' + url + '…' : 'applying…'
+      window.lucidKiosk.launch({ url, zoom })
+    } else {
+      $('launch-msg').textContent = '(not running inside the kiosk app)'
+    }
+  })
+
+  // drag & drop test
+  const dragbox = $('dragbox'); let drag = null
+  dragbox.addEventListener('pointerdown', (e) => {
+    drag = { px: e.clientX, py: e.clientY, bx: dragbox.offsetLeft, by: dragbox.offsetTop }
+    dragbox.classList.add('active')
+  })
+  window.addEventListener('pointermove', (e) => {
+    if (!drag) return
+    dragbox.style.left = (drag.bx + e.clientX - drag.px) + 'px'
+    dragbox.style.top = (drag.by + e.clientY - drag.py) + 'px'
+  }, true)
+  window.addEventListener('pointerup', () => { drag = null; dragbox.classList.remove('active') }, true)
+
+  // telemetry (counts + last coords only — no on-screen cursor over the page)
+  function tele(e) {
+    if (e.type in counts) { counts[e.type]++; $('c-' + e.type).textContent = counts[e.type] }
+    $('t-type').textContent = e.type
+    $('t-xy').textContent = Math.round(e.clientX) + ',' + Math.round(e.clientY)
+  }
+  for (const t of ['pointerdown', 'pointermove', 'pointerup', 'click']) window.addEventListener(t, tele, true)
+
+  // global finger COUNT (numbers only; cursors are confined to block 3 below)
+  const allFingers = new Set()
+  function countFingers() { $('c-fingers').textContent = allFingers.size; maxFingers = Math.max(maxFingers, allFingers.size); $('c-max').textContent = maxFingers }
+  window.addEventListener('pointerdown', (e) => { allFingers.add(e.pointerId); countFingers() }, true)
+  function dropFinger(e) { if (allFingers.delete(e.pointerId)) countFingers() }
+  window.addEventListener('pointerup', dropFinger, true)
+  window.addEventListener('pointercancel', dropFinger, true)
+
+  // finger cursors — ONLY inside the multitouch test field (block 3)
+  const color = (s) => 'hsl(' + ((s * 137.5) % 360) + ' 90% 60%)'
+  const pad = document.querySelector('.bigpad')
+  const padPtrs = new Map(); const used = new Set()
+  function slot() { let s = 1; while (used.has(s)) s++; used.add(s); return s }
+  function placeDot(p, e) { const r = pad.getBoundingClientRect(); p.el.style.left = (e.clientX - r.left) + 'px'; p.el.style.top = (e.clientY - r.top) + 'px' }
+  pad.addEventListener('pointerdown', (e) => {
+    const s = slot(); const el = document.createElement('div'); el.className = 'dot'; el.style.borderColor = color(s); el.textContent = s
+    pad.appendChild(el); const p = { el, s }; padPtrs.set(e.pointerId, p); placeDot(p, e)
+  })
+  window.addEventListener('pointermove', (e) => { const p = padPtrs.get(e.pointerId); if (p) placeDot(p, e) }, true)
+  function endDot(e) { const p = padPtrs.get(e.pointerId); if (!p) return; p.el.remove(); used.delete(p.s); padPtrs.delete(e.pointerId) }
+  window.addEventListener('pointerup', endDot, true)
+  window.addEventListener('pointercancel', endDot, true)
+
+  // pinch + rotate — tracks its own pointers on the pinch pad
+  const box = $('pinchbox'), ppad = document.querySelector('.pinchpad')
+  const pinchPtrs = new Map(); let base = null, scale = 1, rot = 0
+  ppad.addEventListener('pointerdown', (e) => { pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); pinchUpdate() })
+  window.addEventListener('pointermove', (e) => { const p = pinchPtrs.get(e.pointerId); if (p) { p.x = e.clientX; p.y = e.clientY; pinchUpdate() } }, true)
+  function endPinch(e) { if (pinchPtrs.delete(e.pointerId)) pinchUpdate() }
+  window.addEventListener('pointerup', endPinch, true)
+  window.addEventListener('pointercancel', endPinch, true)
+  function pinchUpdate() {
+    const pts = [...pinchPtrs.keys()].sort().slice(0, 2).map((id) => pinchPtrs.get(id))
+    if (pts.length < 2) { base = null; return }
+    const dx = pts[1].x - pts[0].x, dy = pts[1].y - pts[0].y
+    const dist = Math.hypot(dx, dy), ang = Math.atan2(dy, dx)
+    if (!base) { base = { dist, ang, scale, rot }; return }
+    scale = Math.max(0.2, Math.min(8, base.scale * (dist / (base.dist || 1))))
+    rot = base.rot + (ang - base.ang) * 180 / Math.PI
+    box.style.transform = 'scale(' + scale + ') rotate(' + rot + 'deg)'
+    box.firstChild.textContent = scale.toFixed(2) + '×'
+    $('rot').textContent = Math.round(rot)
+  }
+
+  // corner calibration targets: show the px gap between the tap and the centre
+  document.querySelectorAll('.corner').forEach((b) => {
+    b.addEventListener('click', (e) => {
+      const r = b.getBoundingClientRect()
+      const err = Math.round(Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)))
+      b.classList.add('hit')
+      b.textContent = b.dataset.c + ' ' + err + 'px'
+    })
+  })
+
+  // ---- panel diagnostics (fed from the main process via preload onDiag) -----
+  const hex4 = (n) => (n || 0).toString(16).padStart(4, '0')
+  // Each failure mode gets its own instruction — the whole point of the panel.
+  const HINTS = {
+    'input-monitoring': 'The panel is connected and listed, but macOS refuses to let this app read it — a reference device (keyboard/mouse) could not be opened either, so the denial is global. Grant <b>Input Monitoring</b>, then <b>relaunch</b>: a permission granted while the app is running does not reach it. The grant is tied to the exact binary, so after a rebuild you must remove and re-add the entry — re-adding is not optional, an existing entry from an older build does not apply.',
+    'not-found': 'HID devices are visible, but none with the configured ids. Check the USB cable, or find the panel in the list (⌖ marks digitizers) and put its ids into <code>hidVendorId</code> / <code>hidProductId</code> in config.json.',
+    'device-busy': 'The panel was found and the permission is fine, but it would not open — something else is holding it. Close any browser with a WebHID connection to the panel, then re-scan.',
+    'device-error': 'The connection dropped after it had been working — usually the cable or a sleeping panel. Reconnecting automatically.',
+  }
+  const PERM_TEXT = {
+    granted: 'granted',
+    denied: 'DENIED — this is almost certainly your problem',
+    unknown: 'unknown (no keyboard/mouse available to test with)',
+  }
+  let cfgLine = ''
+  let lastSeq = 0, lastAt = 0
+
+  function onDiag(ev) {
+    if (ev.type === 'config') {
+      cfgLine = 'device ' + hex4(ev.vendorId) + ':' + hex4(ev.productId) +
+        ' · maxTouchPoints ' + ev.maxTouchPoints + ' · layout from ' + ev.layoutSource + '\n\n'
+      $('d-layout').textContent = cfgLine + JSON.stringify(ev.layout, null, 2)
+      $('d-devs').dataset.vid = ev.vendorId; $('d-devs').dataset.pid = ev.productId
+    }
+
+    if (ev.type === 'status') {
+      const el = $('d-status')
+      el.textContent = ev.message
+      el.className = 'dstat ' + (ev.state === 'open' ? 'ok' : 'bad')
+      $('d-hint').innerHTML = HINTS[ev.reason] || ''
+      const perm = ev.inputMonitoring
+      $('d-perm').innerHTML = perm
+        ? 'Input Monitoring: <b class="' + perm + '"></b>'
+        : ''
+      if (perm) $('d-perm').querySelector('b').textContent = PERM_TEXT[perm] || perm
+      // Actions are only useful while something is broken.
+      $('d-actions').classList.toggle('on', ev.state !== 'open')
+    }
+
+    if (ev.type === 'devices') {
+      const vid = Number($('d-devs').dataset.vid), pid = Number($('d-devs').dataset.pid)
+      const tb = $('d-devs').querySelector('tbody')
+      tb.innerHTML = ''
+      $('d-count').textContent = '(' + ev.devices.length + ')'
+      for (const d of ev.devices) {
+        const tr = document.createElement('tr')
+        if (d.vendorId === vid && d.productId === pid) tr.className = 'match'
+        if (d.usagePage === 0x0d && d.usage === 0x04) tr.className += ' digi'
+        tr.innerHTML = '<td>' + hex4(d.vendorId) + ':' + hex4(d.productId) + '</td>' +
+          '<td class="dim">' + d.usagePage.toString(16) + '/' + d.usage.toString(16) + '</td>' +
+          '<td class="nm"></td>'
+        tr.lastChild.textContent = d.name || '—'   // device-supplied string: never as HTML
+        tb.appendChild(tr)
+      }
+      if (!ev.devices.length) tb.innerHTML = '<tr><td class="dim">none — see the hint above</td></tr>'
+    }
+
+    if (ev.type === 'report') {
+      const now = performance.now()
+      if (lastAt) {
+        const rate = (ev.seq - lastSeq) / ((now - lastAt) / 1000)
+        $('d-rate').textContent = Math.round(rate)
+      }
+      lastSeq = ev.seq; lastAt = now
+      $('d-seq').textContent = ev.seq
+      $('d-hex').textContent = (ev.hex.match(/../g) || []).join(' ') + '  (' + ev.len + ' bytes)'
+      const p = $('d-parsed')
+      if (ev.contacts === null) {
+        // Bytes arrive but the parser rejects them → the layout is wrong, not a
+        // dead panel. This is the distinction a device list alone cannot make.
+        // parseContacts returns null for two reasons — a report id that doesn't
+        // match, or a layout whose field sizes are implausible (it refuses to
+        // loop on those) — so name both rather than sending someone after the
+        // report id alone.
+        p.className = 'dparsed warn'
+        p.textContent = 'reports arriving, but the parser rejects them — the panel works and touchReport is wrong: either reportId does not match, or a field size (coordBits/maxContacts/strideBits) is out of range'
+      } else if (!ev.contacts.length) {
+        p.className = 'dparsed'
+        p.textContent = '0 contacts (fingers up — or the tip-switch offset is wrong)'
+      } else {
+        p.className = 'dparsed'
+        p.textContent = ev.contacts.length + ' contact(s): ' + ev.contacts
+          .map((c) => '#' + c.id + ' ' + c.nx.toFixed(3) + ',' + c.ny.toFixed(3)).join('   ')
+      }
+    }
+  }
+  const K = window.lucidKiosk
+  const actMsg = (t) => { $('d-act-msg').textContent = t }
+  $('d-open-im').addEventListener('click', () => {
+    if (!K || !K.openInputMonitoring) return actMsg('(not running inside the kiosk app)')
+    actMsg('opening System Settings…')
+    K.openInputMonitoring().then((r) => actMsg(
+      r && r.ok
+        ? 'System Settings opened — add/enable this app, then press Relaunch.'
+        : 'could not open System Settings: ' + ((r && r.error) || 'unknown')))
+  })
+  $('d-rescan').addEventListener('click', () => {
+    if (!K || !K.rescan) return actMsg('(not running inside the kiosk app)')
+    actMsg('re-scanning…')
+    K.rescan().then((r) => actMsg(r && r.ok ? '' : 'no touch agent running'))
+  })
+  $('d-relaunch').addEventListener('click', () => {
+    if (!K || !K.relaunch) return actMsg('(not running inside the kiosk app)')
+    actMsg('relaunching…')
+    K.relaunch()
+  })
+
+  // ---- panel wizard ---------------------------------------------------------
+  let wizard = null // last successful derivation
+  const wMsg = (t) => { $('w-msg').textContent = t }
+  // Shared by "Detect panel layout" and "Save raw descriptors" — both send the
+  // main process the exact same payload, so there is one place that builds it.
+  async function collectHidDevices() {
+    const devs = await navigator.hid.getDevices()
+    // HIDCollectionInfo is a plain dictionary tree — JSON strips the HIDDevice
+    // wrapper so the whole thing survives the contextBridge unchanged.
+    return devs.map((d) => ({
+      vendorId: d.vendorId, productId: d.productId, productName: d.productName,
+      collections: JSON.parse(JSON.stringify(d.collections)),
+    }))
+  }
+  $('w-detect').addEventListener('click', async () => {
+    if (!K || !K.deriveLayout) return wMsg('(not running inside the kiosk app)')
+    if (!navigator.hid) return wMsg('WebHID is not available in this window')
+    if ($('w-detect').disabled) return // ignore a double-click mid-request
+    $('w-detect').disabled = true
+    $('w-save').hidden = true; $('w-out').hidden = true; wizard = null
+    wMsg('reading descriptors…')
+    try {
+      let payload
+      try {
+        payload = await collectHidDevices()
+      } catch (err) {
+        return wMsg('WebHID error: ' + err.message)
+      }
+      let r
+      try {
+        r = await K.deriveLayout(payload)
+      } catch (err) {
+        return wMsg('deriveLayout failed: ' + err.message)
+      }
+      if (!r.ok) {
+        // Derivation failed — the descriptors just read are the only material
+        // left to work from, and the panel may not be available again. Show
+        // them on screen (textContent only: device-supplied strings are in
+        // here) and point at the escape hatch instead of leaving just the
+        // error message.
+        $('w-out').textContent = JSON.stringify(payload, null, 2)
+        $('w-out').hidden = false
+        return wMsg(r.error + ' — use "Save raw descriptors" below to keep what was just read')
+      }
+      wizard = r
+      $('w-out').textContent =
+        JSON.stringify({ hidVendorId: r.vendorId, hidProductId: r.productId, touchReport: r.layout }, null, 2) +
+        (r.warnings.length ? '\n\n' + r.warnings.map((w) => '⚠ ' + w).join('\n') : '')
+      $('w-out').hidden = false
+      $('w-save').hidden = false
+      wMsg('derived from ' + (r.productName || 'panel') + ' — check the block, then save')
+    } finally {
+      $('w-detect').disabled = false
+    }
+  })
+  $('w-save').addEventListener('click', () => {
+    if (!wizard || !K || !K.savePanel) return
+    if ($('w-save').disabled) return // ignore a double-click — savePanel reloads this window
+    $('w-save').disabled = true
+    wMsg('saving — the page reloads with the new panel…')
+    K.savePanel({ hidVendorId: wizard.vendorId, hidProductId: wizard.productId, touchReport: wizard.layout })
+      .catch((err) => {
+        // on success the window is destroyed and this page reloads — a rejection
+        // is the only case that leaves us around to handle it
+        $('w-save').disabled = false
+        wMsg('save failed: ' + err.message)
+      })
+  })
+  // Standalone escape hatch: works whether or not a derivation ever succeeded,
+  // so someone can capture the descriptors and hand them off even when the
+  // wizard itself has nothing to save.
+  $('w-dump').addEventListener('click', async () => {
+    if (!K || !K.dumpDescriptors) return wMsg('(not running inside the kiosk app)')
+    if (!navigator.hid) return wMsg('WebHID is not available in this window')
+    if ($('w-dump').disabled) return // ignore a double-click mid-request
+    $('w-dump').disabled = true
+    wMsg('reading descriptors…')
+    try {
+      let payload
+      try {
+        payload = await collectHidDevices()
+      } catch (err) {
+        return wMsg('WebHID error: ' + err.message)
+      }
+      let r
+      try {
+        r = await K.dumpDescriptors(payload)
+      } catch (err) {
+        return wMsg('dumpDescriptors failed: ' + err.message)
+      }
+      if (!r.ok) return wMsg('save failed: ' + r.error)
+      wMsg('raw descriptors saved to ' + r.written)
+    } finally {
+      $('w-dump').disabled = false
+    }
+  })
+
+  if (K && K.onDiag) K.onDiag(onDiag)
+  else $('d-status').textContent = '(not running inside the kiosk app — no diagnostics)'
+
+  function geom() { $('t-vp').textContent = innerWidth + '×' + innerHeight; $('t-dpr').textContent = devicePixelRatio }
+  geom(); addEventListener('resize', geom)
+})()
+</script>
+</body>
+</html>
