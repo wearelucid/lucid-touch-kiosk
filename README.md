@@ -41,21 +41,29 @@ Download the latest `LucidTouchKiosk-*-arm64.zip` from
 [Releases](https://github.com/wearelucid/lucid-touch-kiosk/releases), unzip it,
 and move the app to `/Applications`.
 
-The app is **not signed or notarised**, so macOS blocks it on first launch:
+The app is **not signed or notarised**, so macOS quarantines it on download.
+Clear that flag once, in Terminal:
 
-1. Open it once and dismiss the warning.
-2. Go to **System Settings → Privacy & Security**, scroll to the bottom, and
-   press **Open Anyway** next to the blocked app.
-3. In the same pane, open **Input Monitoring** and enable Lucid Touch Kiosk.
-   Without it macOS refuses to let the app read the panel, and touch stays dead
-   while everything else looks fine.
-4. Relaunch. A permission granted while the app runs does not reach it.
+```sh
+xattr -dr com.apple.quarantine "/Applications/Lucid Touch Kiosk.app"
+```
+
+Then grant the permission the app needs to read the panel:
+
+1. **System Settings → Privacy & Security → Input Monitoring**, and enable
+   Lucid Touch Kiosk (use **+** to add it if it isn't listed).
+2. Relaunch. A permission granted while the app runs does not reach it.
+
+Without Input Monitoring, macOS refuses to let the app open the panel: the
+touchscreen shows up in every diagnostic and still delivers no touch.
 
 macOS 14+ also asks about Bluetooth, because node-hid scans it while
 enumerating devices. The panel is USB, so **Don't Allow** is fine.
 
-> If you prefer the terminal, `xattr -dr com.apple.quarantine "/Applications/Lucid Touch Kiosk.app"`
-> replaces steps 1 and 2.
+> Without the `xattr` command, macOS blocks the first launch. The **Open
+> Anyway** button in System Settings → Privacy & Security only appears
+> immediately after such a blocked attempt, which makes it easy to miss —
+> hence the Terminal route above.
 
 ### First run
 
