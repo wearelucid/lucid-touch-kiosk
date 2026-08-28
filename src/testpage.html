@@ -5,93 +5,272 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Lucid Touch Kiosk — Test Page</title>
 <style>
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
-  body {
-    font: 14px ui-monospace, Menlo, monospace;
-    background: #0b0f14; color: #d7e0ea; padding: 8px 8px 40px;
-  }
-  h1 { font-size: 18px; }
-  h2 { font-size: 14px; color: #9fb6cd; margin: 0 0 6px; }
-  .bar {
-    position: sticky; top: 0; z-index: 50; background: #101722;
-    border: 1px solid #21303f; border-radius: 8px; padding: 8px 10px;
-    display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px;
-  }
-  .bar b { color: #5cff9d; }
-  .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); margin-top: 10px; }
-  section { background: #101722; border: 1px solid #21303f; border-radius: 8px; padding: 12px; }
-  button { font: inherit; cursor: pointer; background: #1d2a38; color: #d7e0ea; border: 1px solid #34465a; border-radius: 6px; }
-  .taps { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .taps .xs { width: 30px; height: 30px; padding: 0; font-size: 9px; }
-  .taps .md { padding: 12px 18px; }
-  .taps .lg { padding: 22px 30px; font-size: 16px; }
-  .scroll { height: 220px; overflow-y: auto; border: 1px solid #34465a; border-radius: 6px; background: #0d141d; touch-action: pan-y; }
-  .item { padding: 11px 12px; border-bottom: 1px solid #1b2733; }
-  .pinchpad { height: 240px; touch-action: none; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px dashed #34465a; border-radius: 6px; background: #0d141d; }
-  .pinchbox { width: 110px; height: 110px; border-radius: 10px; background: #2f81f7; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; user-select: none; }
-  .bigpad { position: relative; overflow: hidden; height: 180px; touch-action: none; display: flex; align-items: center; justify-content: center; color: #6b7a89; border: 1px dashed #34465a; border-radius: 6px; background: #0d141d; user-select: none; }
-  .cfgbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: #101722; border: 1px solid #2f81f7; border-radius: 8px; padding: 12px; margin: 10px 0; }
-  .cfgbar input { background: #0d141d; color: #d7e0ea; border: 1px solid #34465a; border-radius: 6px; padding: 9px; font: inherit; }
-  .cfgbar #cfg-url { width: 340px; max-width: 60vw; }
-  .cfgbar #cfg-zoom { width: 80px; }
-  .cfgbar select { background: #0d141d; color: #d7e0ea; border: 1px solid #34465a; border-radius: 6px; padding: 9px; font: inherit; }
-  .cfgbar #launch { background: #2f81f7; color: #fff; border: 0; padding: 10px 20px; }
-  .dragpad { position: relative; height: 180px; touch-action: none; overflow: hidden; border: 1px dashed #34465a; border-radius: 6px; background: #0d141d; }
-  .dragbox { position: absolute; left: 16px; top: 16px; width: 80px; height: 80px; border-radius: 8px; background: #2f81f7; color: #fff; display: flex; align-items: center; justify-content: center; user-select: none; touch-action: none; }
-  .dragbox.active { background: #5cff9d; color: #042; }
-  .corner { position: fixed; z-index: 9000; width: 78px; height: 46px; font: 11px ui-monospace, monospace; background: #1b2a1b; color: #9f9; border: 1px solid #3a5; border-radius: 6px; }
-  .corner.tl { top: 6px; left: 6px; } .corner.tr { top: 6px; right: 6px; }
-  .corner.bl { bottom: 6px; left: 6px; } .corner.br { bottom: 6px; right: 6px; }
-  .corner.cc { top: 50%; left: 50%; transform: translate(-50%, -50%); }
-  .corner.hit { background: #14502a; color: #7cff9d; }
-  label.rng { display: flex; align-items: center; gap: 8px; }
-  input[type=range] { touch-action: none; flex: 1; }
-  .crosshair { position: fixed; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 2px solid #5cff9d; border-radius: 50%; pointer-events: none; z-index: 9999; box-shadow: 0 0 12px #5cff9d88; }
-  .dot { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border: 3px solid #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; background: rgba(0,0,0,.35); pointer-events: none; z-index: 9998; }
-  .dim { color: #6b7a89; }
-  /* --- panel diagnostics --------------------------------------------------- */
-  #diag { margin-top: 10px; }
-  #diag h3 { font-size: 12px; color: #9fb6cd; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .06em; }
-  /* generous hit area — this gets tapped with a finger, not clicked with a mouse */
-  #diag summary { margin-top: 10px; padding: 12px 10px; cursor: pointer; color: #9fb6cd;
-    background: #0d141d; border: 1px solid #21303f; border-radius: 6px; user-select: none; }
-  #diag summary:hover { border-color: #2f81f7; }
-  #diag details[open] summary { margin-bottom: 12px; }
-  .dstat { padding: 10px 12px; border-radius: 6px; font-size: 15px; border: 1px solid #34465a; background: #0d141d; }
-  .dstat.ok { border-color: #3a5; background: #14261b; color: #7cff9d; }
-  .dstat.bad { border-color: #a33; background: #2a1414; color: #ff9d9d; }
-  #d-hint { margin-top: 6px; line-height: 1.5; }
-  #d-hint:empty { display: none; }
-  .dperm { margin-top: 6px; font-size: 13px; }
-  .dperm:empty { display: none; }
-  .dperm b.granted { color: #7cff9d; }
-  .dperm b.denied { color: #ff9d9d; }
-  .dperm b.unknown { color: #ffd08a; }
-  #d-actions { display: none; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
-  #d-actions.on { display: flex; }
-  #d-actions button { padding: 12px 16px; }
-  #d-actions #d-open-im { background: #2f81f7; color: #fff; border: 0; }
-  .dcols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-  #d-devs { width: 100%; border-collapse: collapse; font-size: 12px; }
-  #d-devs td { padding: 3px 8px 3px 0; border-bottom: 1px solid #1b2733; white-space: nowrap; }
-  #d-devs td.nm { white-space: normal; color: #9fb6cd; }
-  #d-devs tr.match td { color: #7cff9d; }
-  #d-devs tr.digi td:first-child::after { content: ' ⌖'; color: #2f81f7; }
-  #diag pre { margin: 0; padding: 8px; background: #0d141d; border: 1px solid #21303f; border-radius: 6px;
-    font: 11px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all; color: #9fb6cd; }
-  .dparsed { padding: 8px; border-radius: 6px; background: #0d141d; border: 1px solid #21303f; margin-bottom: 6px; }
-  .dparsed.warn { border-color: #a83; color: #ffd08a; }
-  #d-wizard { margin-top: 16px; }
-  #d-wizard #w-save { background: #2f81f7; color: #fff; border: 0; }
-  #d-wizard pre { margin-top: 8px; }
-  /* deriveFromDevices() joins per-device errors with \n — keep them one per line */
-  #w-msg { white-space: pre-line; }
+/* =========================================================================
+   Lucid Touch Kiosk — test & setup page.
+   Type: Space Grotesk for UI, Instrument Serif for headings (both OFL, bundled
+   in src/fonts/ with their licences). Colour: monochrome ink on paper, with an
+   acid-lime accent reserved for live/active states.
+
+   ALL colours live in the :root block below — change them there and the whole
+   page follows. Nothing further down hard-codes a colour.
+   ========================================================================= */
+
+@font-face {
+  font-family: 'Space Grotesk'; font-style: normal; font-weight: 400;
+  font-display: swap; src: url('fonts/space-grotesk-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk'; font-style: normal; font-weight: 500;
+  font-display: swap; src: url('fonts/space-grotesk-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Instrument Serif'; font-style: normal; font-weight: 400;
+  font-display: swap; src: url('fonts/instrument-serif-400.woff2') format('woff2');
+}
+
+:root {
+  /* --- palette: the only place colours are defined ---------------------- */
+  --ink: #201f20;          /* text, borders, the dark of the design        */
+  --ink-soft: #424242;     /* secondary text                               */
+  --ink-faint: #656565;    /* hints, captions                              */
+  --paper: #fff;           /* page background                              */
+  --surface: #f5f5f5;      /* cards, panels                                */
+  --surface-2: #ededed;    /* insets, wells, code blocks                   */
+  --accent: #d9ff00;       /* acid lime — live/active, always behind ink   */
+  --line: rgba(32, 31, 32, 0.12);
+  --line-strong: rgba(32, 31, 32, 0.24);
+
+  /* Status colours. Deliberately outside the brand palette: a diagnostic
+     panel has to say "broken" faster than it has to look on-brand. */
+  --ok: #1a7f37;
+  --ok-bg: #e8f5eb;
+  --bad: #b3261e;
+  --bad-bg: #fdecea;
+  --warn: #8a5a00;
+  --warn-bg: #fdf3e2;
+
+  /* --- type ------------------------------------------------------------- */
+  --sans: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* --- geometry --------------------------------------------------------- */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --gap: 12px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font: 400 15px/1.5 var(--sans);
+  background: var(--paper);
+  color: var(--ink);
+  /* Vertical padding clears the fixed corner calibration targets (8px inset,
+     50px tall) so they never sit on top of the heading or the last card. */
+  padding: 70px 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1 {
+  font: 400 34px/1.1 var(--serif);
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+h2 {
+  font: 500 12px/1.3 var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-faint);
+  margin: 0 0 10px;
+}
+.lede { color: var(--ink-soft); margin: 0 0 18px; max-width: 62ch; }
+
+/* --- live telemetry bar --------------------------------------------------- */
+.bar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--ink); color: var(--paper);
+  border-radius: var(--radius);
+  padding: 12px 16px; margin-bottom: var(--gap);
+  display: flex; gap: 22px; flex-wrap: wrap;
+  font: 400 12px/1 var(--mono);
+  letter-spacing: 0.02em;
+}
+.bar span { display: inline-flex; align-items: baseline; gap: 6px; opacity: 0.72; }
+.bar b { font: 500 14px/1 var(--sans); color: var(--accent); opacity: 1; }
+.bar .dim { opacity: 0.45; }
+.bar .dim b { color: var(--paper); }
+
+/* --- setup bar ------------------------------------------------------------ */
+.cfgbar {
+  display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px; margin-bottom: var(--gap);
+}
+.cfgbar label {
+  display: flex; flex-direction: column; gap: 6px;
+  font: 500 11px/1 var(--sans); text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ink-faint);
+}
+.cfgbar input, .cfgbar select {
+  background: var(--paper); color: var(--ink);
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  padding: 10px 12px; font: 400 15px/1 var(--sans);
+}
+.cfgbar input:focus, .cfgbar select:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
+.cfgbar #cfg-url { width: 320px; max-width: 60vw; }
+.cfgbar #cfg-zoom { width: 88px; }
+#launch {
+  background: var(--ink); color: var(--paper); border: 0;
+  border-radius: var(--radius-sm); padding: 12px 22px;
+  font: 500 15px/1 var(--sans); cursor: pointer;
+}
+#launch:hover { background: var(--ink-soft); }
+#launch-msg { font-size: 13px; color: var(--ink-faint); align-self: center; }
+
+/* --- test cards ----------------------------------------------------------- */
+.grid {
+  display: grid; gap: var(--gap);
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+section {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px;
+}
+button {
+  font: 500 14px/1 var(--sans); cursor: pointer;
+  background: var(--paper); color: var(--ink);
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+}
+button:hover { border-color: var(--ink); }
+
+.taps { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.taps .xs { width: 34px; height: 34px; padding: 0; font-size: 10px; }
+.taps .md { padding: 12px 18px; }
+.taps .lg { padding: 22px 30px; font-size: 17px; }
+
+.scroll {
+  height: 220px; overflow-y: auto; touch-action: pan-y;
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.item { padding: 12px 14px; border-bottom: 1px solid var(--line); font: 400 14px var(--mono); color: var(--ink-soft); }
+
+.pinchpad, .bigpad, .dragpad {
+  background: var(--paper); border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm); overflow: hidden; touch-action: none;
+  user-select: none;
+}
+.pinchpad { height: 240px; display: flex; align-items: center; justify-content: center; }
+.pinchbox {
+  width: 118px; height: 118px; border-radius: var(--radius-sm);
+  background: var(--accent); color: var(--ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; font: 500 15px/1.35 var(--sans);
+}
+.bigpad {
+  position: relative; height: 190px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-faint); font-size: 14px;
+}
+.dragpad { position: relative; height: 190px; }
+.dragbox {
+  position: absolute; left: 16px; top: 16px; width: 86px; height: 86px;
+  border-radius: var(--radius-sm); background: var(--ink); color: var(--paper);
+  display: flex; align-items: center; justify-content: center;
+  font: 500 13px var(--sans); touch-action: none;
+}
+.dragbox.active { background: var(--accent); color: var(--ink); }
+
+label.rng { display: flex; align-items: center; gap: 12px; font: 400 14px var(--sans); }
+label.rng b { font: 500 15px var(--mono); min-width: 3ch; }
+input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
+
+.dot {
+  position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px;
+  border: 3px solid var(--ink); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font: 500 14px var(--sans); color: var(--ink);
+  background: var(--accent); pointer-events: none; z-index: 9998;
+}
+.dim { color: var(--ink-faint); font-size: 13px; }
+
+/* --- corner calibration targets ------------------------------------------- */
+.corner {
+  position: fixed; z-index: 9000; width: 86px; height: 50px;
+  font: 500 12px var(--mono);
+  background: var(--paper); color: var(--ink);
+  border: 1px solid var(--ink); border-radius: var(--radius-sm);
+}
+.corner.tl { top: 8px; left: 8px; }  .corner.tr { top: 8px; right: 8px; }
+.corner.bl { bottom: 8px; left: 8px; } .corner.br { bottom: 8px; right: 8px; }
+.corner.cc { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.corner.hit { background: var(--accent); border-color: var(--ink); }
+
+/* --- diagnostics ----------------------------------------------------------- */
+#diag { margin-top: var(--gap); }
+#diag h3 {
+  font: 500 11px/1 var(--sans); text-transform: uppercase; letter-spacing: 0.09em;
+  color: var(--ink-faint); margin: 16px 0 8px;
+}
+/* generous hit area — this gets tapped with a finger, not clicked with a mouse */
+#diag summary {
+  margin-top: 12px; padding: 14px 16px; cursor: pointer;
+  font: 500 14px var(--sans); color: var(--ink);
+  background: var(--paper); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm); user-select: none;
+}
+#diag summary:hover { border-color: var(--ink); }
+#diag details[open] summary { margin-bottom: 14px; }
+
+.dstat {
+  padding: 14px 16px; border-radius: var(--radius-sm);
+  font: 500 16px/1.4 var(--sans);
+  border: 1px solid var(--line-strong); background: var(--paper);
+}
+.dstat.ok { border-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+.dstat.bad { border-color: var(--bad); background: var(--bad-bg); color: var(--bad); }
+#d-hint { margin-top: 8px; line-height: 1.55; max-width: 78ch; }
+#d-hint:empty { display: none; }
+.dperm { margin-top: 8px; font-size: 14px; color: var(--ink-soft); }
+.dperm:empty { display: none; }
+.dperm b.granted { color: var(--ok); }
+.dperm b.denied { color: var(--bad); }
+.dperm b.unknown { color: var(--warn); }
+
+#d-actions { display: none; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+#d-actions.on { display: flex; }
+#d-actions button { padding: 12px 18px; }
+#d-actions #d-open-im { background: var(--ink); color: var(--paper); border: 0; }
+#d-act-msg { font-size: 13px; color: var(--ink-faint); }
+
+.dcols { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+#d-devs { width: 100%; border-collapse: collapse; font: 400 12px var(--mono); }
+#d-devs td { padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+#d-devs td.nm { white-space: normal; color: var(--ink-soft); font-family: var(--sans); }
+#d-devs tr.match td { background: var(--accent); }
+#d-devs tr.digi td:first-child::after { content: ' ⌖'; }
+
+#diag pre, .dparsed {
+  margin: 0; padding: 12px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font: 400 12px/1.6 var(--mono); color: var(--ink-soft);
+  white-space: pre-wrap; word-break: break-all;
+}
+.dparsed { margin-bottom: 8px; }
+.dparsed.warn { border-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+
+/* --- panel wizard ---------------------------------------------------------- */
+#d-wizard { margin-top: 20px; }
+#d-wizard #w-save { background: var(--ink); color: var(--paper); border: 0; }
+#d-wizard pre { margin-top: 10px; }
+#w-msg { white-space: pre-line; font-size: 13px; color: var(--ink-faint); }
 </style>
 </head>
 <body>
   <h1>Lucid Touch Kiosk — Test &amp; Setup</h1>
-  <p class="dim">Test touch below. Set the kiosk URL + zoom and press Launch (blank URL keeps this test page).</p>
+  <p class="lede">Test touch below. Set the kiosk URL + zoom and press Launch (blank URL keeps this test page).</p>
 
   <div class="cfgbar">
     <label>URL <input id="cfg-url" placeholder="blank = keep test page" /></label>
@@ -144,7 +323,7 @@
     <section>
       <h2>4 · Pinch &amp; rotate</h2>
       <div class="pinchpad">
-        <div class="pinchbox" id="pinchbox">1.00×<br><span id="rot">0</span>°</div>
+        <div class="pinchbox" id="pinchbox"><span id="scaleval">1.00×</span><span><span id="rot">0</span>°</span></div>
       </div>
     </section>
 
@@ -321,7 +500,7 @@
     scale = Math.max(0.2, Math.min(8, base.scale * (dist / (base.dist || 1))))
     rot = base.rot + (ang - base.ang) * 180 / Math.PI
     box.style.transform = 'scale(' + scale + ') rotate(' + rot + 'deg)'
-    box.firstChild.textContent = scale.toFixed(2) + '×'
+    $('scaleval').textContent = scale.toFixed(2) + '×'
     $('rot').textContent = Math.round(rot)
   }
 

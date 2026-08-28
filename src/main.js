@@ -257,14 +257,20 @@ function displayPickerHtml() {
   return (
     'data:text/html;charset=utf-8,' +
     encodeURIComponent(`<!doctype html><html><head><meta charset="utf-8"><style>
-      body{font:15px ui-monospace,Menlo,monospace;background:#0b0f14;color:#d7e0ea;margin:0;padding:32px}
-      h1{font-size:20px;color:#9fb6cd}
-      .disp{display:block;width:100%;text-align:left;margin:10px 0;padding:18px 20px;font:inherit;
-        background:#1d2a38;color:#d7e0ea;border:1px solid #34465a;border-radius:8px;cursor:pointer}
-      .disp:hover{background:#243648;border-color:#2f81f7}
+      :root{--ink:#201f20;--ink-faint:#656565;--paper:#fff;--surface:#f5f5f5;
+        --accent:#d9ff00;--line:rgba(32,31,32,.24);
+        --sans:'Space Grotesk',ui-sans-serif,system-ui,-apple-system,sans-serif;
+        --serif:'Instrument Serif',Georgia,serif}
+      body{font:400 15px/1.5 var(--sans);background:var(--paper);color:var(--ink);margin:0;padding:32px}
+      h1{font:400 32px/1.1 var(--serif);margin:0 0 6px}
+      p{color:var(--ink-faint);margin:0 0 20px;max-width:52ch}
+      .disp{display:block;width:100%;text-align:left;margin:10px 0;padding:18px 20px;
+        font:500 15px var(--sans);background:var(--surface);color:var(--ink);
+        border:1px solid var(--line);border-radius:10px;cursor:pointer}
+      .disp:hover{background:var(--accent);border-color:var(--ink)}
     </style></head><body>
-      <h1>Lucid Touch Kiosk — choose a display</h1>
-      <p>Click the touchscreen's display. The touch test page opens there next.</p>
+      <h1>Choose a display</h1>
+      <p>Pick the touchscreen's display. The touch test page opens there next.</p>
       ${buttons}
     </body></html>`)
   )
