@@ -50,6 +50,9 @@
           ]
         }
       ],
+      "electronLanguages": [
+        "en"
+      ],
       "identity": null,
       "category": "public.app-category.utilities",
       "extendInfo": {
