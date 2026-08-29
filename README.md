@@ -8,21 +8,16 @@ without any in-page code, and touch feels native.
 
 ## Why
 
-macOS has no touchscreen support. A USB touch panel is ignored by the system,
-while Windows treats the same hardware as a multitouch device.
+macOS has no touchscreen support. A USB touch panel is ignored by the system. At best, you get mouse emulation out of the box.
 
-The commercial drivers that fill this gap work system-wide: every application
-becomes touchable. They achieve that by emulating a mouse, which is where the
-compromise sits — one contact at a time, no momentum scrolling, no pinch, and
-no real touch events for a web page to respond to.
+The commercial drivers that try to fill this gap work system-wide but not well. 
 
-This app makes the opposite trade. Nothing else on the Mac gains touch; only
-the page this kiosk loads. Within that scope the support is complete, because
+By injecting touch events from the HID straight into the browserm nothing else on the Mac gains touch; only
+the page this kiosk loads. But within that scope the support is complete, because
 the events are injected as trusted input rather than translated into mouse
 clicks: `panel → node-hid → bit parser → Input.dispatchTouchEvent`.
 
-So the question is which shape fits: a driver if the whole desktop needs touch,
-this if a single web app does.
+Inside the browser you get native touch with everything you'd expect it to have.
 
 ## Requirements
 
@@ -50,7 +45,7 @@ Clear that flag once, in Terminal:
 xattr -dr com.apple.quarantine "path/to/Lucid Touch Kiosk.app"
 ```
 
-Then grant the permission the app needs to read the panel:
+Then grant the permission the app needs to read the panel. It will ask on first launch. If skipped:
 
 1. **System Settings → Privacy & Security → Input Monitoring**, and enable
    Lucid Touch Kiosk (use **+** to add it if it isn't listed).
