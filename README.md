@@ -12,12 +12,12 @@ macOS has no touchscreen support. A USB touch panel is ignored by the system. At
 
 The commercial drivers that try to fill this gap work system-wide but not well. 
 
-By injecting touch events from the HID straight into the browserm nothing else on the Mac gains touch; only
+By injecting touch events from the HID straight into the browser nothing else on the Mac gains touch; only
 the page this kiosk loads. But within that scope the support is complete, because
 the events are injected as trusted input rather than translated into mouse
 clicks: `panel → node-hid → bit parser → Input.dispatchTouchEvent`.
 
-Inside the browser you get native touch with everything you'd expect it to have.
+So, inside the browser you get native touch with everything you'd expect it to have.
 
 ## Requirements
 
