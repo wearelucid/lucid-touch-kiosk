@@ -12,6 +12,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { startTouchAgent } = require('./touch-agent')
 const { resolveRotation } = require('./parse')
+const { originOf, isBundled, pickAcceptedPort, serialAllowed, addDevice, removeDevice } = require('./serial')
 const { deriveFromDevices } = require('./derive')
 
 const log = (...a) => console.log('[kiosk]', ...a)
@@ -26,6 +27,7 @@ const DEFAULTS = {
   displayIndex: 1,
   zoom: 1,
   touchRotation: null, // null = follow the display's rotation; 0|90|180|270 overrides
+  serialDevices: [], // [{ vendorId, productId, name }] accepted on the test page
 }
 
 const TEST_PAGE = path.join(__dirname, 'testpage.html')
@@ -316,19 +318,115 @@ function enterDisplayPicker() {
   win.loadURL(displayPickerHtml())
 }
 
-// --- WebHID (panel wizard) ---------------------------------------------------
+// --- device permissions (WebHID + Web Serial) ------------------------------
 
-// The test page reads the touch panel's report descriptor via WebHID —
-// Chromium parses descriptors (node-hid on macOS cannot), which is how the
-// wizard derives a touchReport layout for an unknown panel. Reading
-// `device.collections` never open()s the device, so it cannot collide with
-// the touch agent holding it through node-hid.
-function setupWebHid() {
-  // Only the bundled file:// pages get HID access — never a remote kiosk URL.
-  const trusted = (origin) => typeof origin === 'string' && origin.startsWith('file://')
-  session.defaultSession.setDevicePermissionHandler(
-    (details) => details.deviceType === 'hid' && trusted(details.origin),
-  )
+const serialDevices = () => (pending && pending.serialDevices) || []
+const kioskOrigin = () => (pending && pending.url ? originOf(normalizeUrl(pending.url)) : '')
+
+// While the operator is choosing a serial port on the test page, Electron's
+// select-serial-port callback is parked here until they answer.
+let serialPick = null // { callback, wc, ports }
+
+const summarizePort = (p) => ({
+  portId: p.portId,
+  portName: p.portName,
+  displayName: p.displayName || '',
+  vendorId: p.vendorId,
+  productId: p.productId,
+})
+
+// Grants to the kiosk page are logged once per device and origin: the page's
+// reconnect loop calls getPorts() every few seconds, and a line per call would
+// bury everything else — but without any line, a working connection and one
+// that was never attempted look the same in the log.
+const serialGrantsLogged = new Set()
+function logSerialGrant(origin, device) {
+  const vid = device.vendorId ?? device.vendor_id
+  const pid = device.productId ?? device.product_id
+  const key = origin + '|' + vid + ':' + pid
+  if (serialGrantsLogged.has(key)) return
+  serialGrantsLogged.add(key)
+  log('serial: handed', device.displayName || device.name || vid + ':' + pid, 'to', origin)
+}
+
+function sendSerialPorts() {
+  if (serialPick && !serialPick.wc.isDestroyed()) serialPick.wc.send('kiosk:serialPorts', serialPick.ports)
+}
+
+/**
+ * Chrome shows a chooser for navigator.hid / navigator.serial; Electron shows
+ * nothing and leaves both the permission and the choice to the app. Unhandled,
+ * requestPort() is cancelled silently — which is exactly how a page's
+ * "connect" button fails in a kiosk with no visible error.
+ *
+ * WebHID: only the bundled pages (the panel wizard reads descriptors) — never a
+ * remote kiosk URL, which shares this session.
+ *
+ * Serial: only device models an operator accepted on the test page
+ * (config.serialDevices), and only for the test page itself or the origin of
+ * the configured kiosk URL. The kiosk page never sees a chooser — visitors
+ * stand in front of it — so its requests are answered with the accepted port.
+ */
+function setupDevicePermissions() {
+  const ses = session.defaultSession
+  ses.setDevicePermissionHandler((details) => {
+    if (details.deviceType === 'hid') return isBundled(details.origin)
+    if (details.deviceType === 'serial') {
+      const ok = serialAllowed({
+        origin: details.origin,
+        device: details.device,
+        kioskOrigin: kioskOrigin(),
+        devices: serialDevices(),
+      })
+      if (ok && !isBundled(details.origin)) logSerialGrant(details.origin, details.device)
+      return ok
+    }
+    return false
+  })
+
+  ses.on('select-serial-port', (event, portList, wc, callback) => {
+    event.preventDefault()
+    const origin = originOf(wc.getURL())
+    if (isBundled(origin)) {
+      // The test page asked: the operator chooses. A newer search replaces an
+      // unanswered one, and a closed page must not leave the request hanging.
+      if (serialPick) serialPick.callback('')
+      serialPick = { callback, wc, ports: portList.map(summarizePort) }
+      log('serial: chooser open on the test page —', portList.length, 'port(s) visible')
+      wc.once('destroyed', () => {
+        if (serialPick && serialPick.wc === wc) {
+          serialPick.callback('')
+          serialPick = null
+        }
+      })
+      sendSerialPorts()
+      return
+    }
+    if (origin && origin === kioskOrigin()) {
+      const id = pickAcceptedPort(portList, serialDevices())
+      if (id) logSerialGrant(origin, portList.find((p) => p.portId === id))
+      if (!id)
+        log('serial: the page asked for a port but no visible port is accepted —',
+          'set one up on the test page (', portList.length, 'port(s) visible )')
+      callback(id)
+      return
+    }
+    log('serial: refused a port request from', origin || '(unknown origin)')
+    callback('')
+  })
+
+  // Only fire while a chooser is open — keeps the operator's list live when a
+  // device is plugged in after pressing "search".
+  ses.on('serial-port-added', (_e, port) => {
+    if (!serialPick) return
+    serialPick.ports.push(summarizePort(port))
+    sendSerialPorts()
+  })
+  ses.on('serial-port-removed', (_e, port) => {
+    if (!serialPick) return
+    serialPick.ports = serialPick.ports.filter((p) => p.portId !== port.portId)
+    sendSerialPorts()
+  })
 }
 
 // --- IPC --------------------------------------------------------------------
@@ -400,6 +498,43 @@ ipcMain.handle('kiosk:dumpDescriptors', (_e, devices) => {
     : { ok: false, error: 'could not write hid-descriptors.json to any candidate location' }
 })
 
+// --- serial devices (test page only) ----------------------------------------
+
+ipcMain.handle('kiosk:serialDevices', () => serialDevices())
+
+// The operator's answer to a parked select-serial-port. Unknown ids cancel
+// rather than trust the renderer with an arbitrary port id.
+ipcMain.handle('kiosk:pickSerialPort', (_e, portId) => {
+  if (!serialPick) return { ok: false }
+  const chosen = serialPick.ports.find((p) => p.portId === portId)
+  const known = Boolean(chosen)
+  log('serial: operator', known ? 'picked ' + (chosen.displayName || chosen.portName) : 'cancelled the chooser')
+  serialPick.callback(known ? portId : '')
+  serialPick = null
+  return { ok: known }
+})
+
+ipcMain.handle('kiosk:saveSerialDevice', (_e, d = {}) => {
+  // A port without USB ids (Bluetooth, built-in) cannot be recognised again
+  // after a restart, so it can't be accepted.
+  if (!Number.isFinite(Number(d.vendorId)) || !Number.isFinite(Number(d.productId)) ||
+      d.vendorId === '' || d.productId === '' || d.vendorId == null || d.productId == null)
+    return { ok: false, error: 'this port has no USB vendor/product id, so it cannot be remembered' }
+  pending = pending || loadSeed()
+  pending.serialDevices = addDevice(pending.serialDevices, d)
+  const written = writeConfig(pending)
+  log('accepted serial device', d.vendorId + ':' + d.productId, d.name || '', '→', written)
+  return { ok: true, written, devices: pending.serialDevices }
+})
+
+ipcMain.handle('kiosk:removeSerialDevice', (_e, d = {}) => {
+  pending = pending || loadSeed()
+  pending.serialDevices = removeDevice(pending.serialDevices, d)
+  const written = writeConfig(pending)
+  log('removed serial device', d.vendorId + ':' + d.productId, '→', written)
+  return { ok: true, written, devices: pending.serialDevices }
+})
+
 // --- diagnostics actions (test page only) ----------------------------------
 
 // macOS shows the Input Monitoring prompt once per binary and never again after
@@ -444,7 +579,7 @@ ipcMain.handle('kiosk:launch', (_e, opts = {}) => {
 // --- boot ------------------------------------------------------------------
 
 app.whenReady().then(() => {
-  setupWebHid()
+  setupDevicePermissions()
   const start = () => {
     const ext = findExternalConfig()
     if (!ext) {

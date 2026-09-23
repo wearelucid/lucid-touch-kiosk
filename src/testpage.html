@@ -61,14 +61,18 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; }
+html, body { margin: 0; }
 body {
   font: 400 15px/1.5 var(--sans);
   background: var(--paper);
   color: var(--ink);
   /* Vertical padding clears the fixed corner calibration targets (8px inset,
-     50px tall) so they never sit on top of the heading or the last card. */
-  padding: 70px 16px;
+     50px tall) so they never sit on top of the heading or the last card.
+     min-height, not height: a fixed-height body ends at the viewport and the
+     content overflows it, so the bottom padding would land mid-page instead of
+     after the last card. */
+  min-height: 100vh;
+  padding: 70px 16px 90px;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -251,7 +255,7 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
 #d-devs tr.match td { background: var(--accent); }
 #d-devs tr.digi td:first-child::after { content: ' ⌖'; }
 
-#diag pre, .dparsed {
+#diag pre, #serial pre, .dparsed {
   margin: 0; padding: 12px;
   background: var(--surface-2); border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -260,6 +264,33 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
 }
 .dparsed { margin-bottom: 8px; }
 .dparsed.warn { border-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+
+/* --- serial devices ------------------------------------------------------- */
+#serial { margin-top: var(--gap); }
+#serial h3 {
+  font: 500 11px/1 var(--sans); text-transform: uppercase; letter-spacing: 0.09em;
+  color: var(--ink-faint); margin: 16px 0 8px;
+}
+#serial [hidden] { display: none !important; }
+.s-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.s-list li {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.s-list .s-name { font-weight: 500; }
+.s-list .s-id { font: 400 12px var(--mono); color: var(--ink-faint); }
+.s-list button { margin-left: auto; padding: 10px 16px; }
+.s-list li.s-empty { color: var(--ink-faint); font-size: 14px; }
+#s-accept { background: var(--ink); color: var(--paper); border: 0; }
+.s-baud {
+  display: inline-flex; flex-direction: column; gap: 6px; margin-bottom: 10px;
+  font: 500 11px/1 var(--sans); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint);
+}
+.s-baud select {
+  background: var(--paper); color: var(--ink); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm); padding: 8px 10px; font: 400 14px var(--sans);
+}
+#s-data { max-height: 200px; overflow: auto; }
 
 /* --- panel wizard ---------------------------------------------------------- */
 #d-wizard { margin-top: 20px; }
@@ -382,6 +413,42 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
         <pre id="w-out" hidden></pre>
       </div>
     </details>
+  </section>
+
+  <section id="serial">
+    <h2>8 · Serial devices</h2>
+    <p class="dim">Devices the kiosk page may open via Web Serial — a barcode scanner, a card
+      reader. Chrome asks the user for every connection; a kiosk page never sees a chooser, so
+      only devices accepted here are handed to it. Accepted models are stored in config.json.</p>
+
+    <h3>Accepted</h3>
+    <ul class="s-list" id="s-accepted"></ul>
+
+    <div class="taps">
+      <button id="s-search" class="md">Search serial devices</button>
+      <span id="s-msg" class="dim"></span>
+    </div>
+
+    <div id="s-chooser" hidden>
+      <h3>Available ports <span class="dim">— plug a device in now and it appears here</span></h3>
+      <ul class="s-list" id="s-ports"></ul>
+      <button id="s-cancel" class="md">Cancel</button>
+    </div>
+
+    <div id="s-probe" hidden>
+      <h3>Live data — <span id="s-probe-name"></span></h3>
+      <label class="s-baud">Baud (for this test only — the page sets its own)
+        <select id="s-baud">
+          <option>9600</option><option>19200</option><option>38400</option>
+          <option>57600</option><option selected>115200</option>
+        </select></label>
+      <pre id="s-data">— scan or send something —</pre>
+      <p class="dim"><b id="s-bytes">0</b> bytes received</p>
+      <div class="taps">
+        <button id="s-accept" class="md">Accept device</button>
+        <button id="s-discard" class="md">Discard</button>
+      </div>
+    </div>
   </section>
 
   <!-- viewport-corner calibration targets: tap each, it shows the px gap from centre -->
@@ -716,6 +783,157 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
     } finally {
       $('w-dump').disabled = false
     }
+  })
+
+
+  // ---- serial devices ---------------------------------------------------------
+  // Electron has no port chooser, so this page is it: requestPort() parks in the
+  // main process, the ports arrive here, and the operator's pick answers it.
+  const sMsg = (t) => { $('s-msg').textContent = t }
+  const sId = (v, p) => hex4(Number(v)) + ':' + hex4(Number(p))
+  const sHasIds = (p) => p.vendorId != null && p.vendorId !== '' && p.productId != null && p.productId !== ''
+  let sPort = null, sReader = null, sReading = false, sChosen = null, sBytes = 0, sText = ''
+
+  function sRenderAccepted(list) {
+    const ul = $('s-accepted'); ul.innerHTML = ''
+    if (!list || !list.length) {
+      const li = document.createElement('li'); li.className = 's-empty'
+      li.textContent = 'none yet — the kiosk page cannot open any serial device'
+      ul.appendChild(li); return
+    }
+    for (const d of list) {
+      const li = document.createElement('li')
+      const name = document.createElement('span'); name.className = 's-name'; name.textContent = d.name // device-supplied: never as HTML
+      const id = document.createElement('span'); id.className = 's-id'; id.textContent = sId(d.vendorId, d.productId)
+      const rm = document.createElement('button'); rm.textContent = 'Remove'
+      rm.addEventListener('click', async () => {
+        const r = await K.removeSerialDevice({ vendorId: d.vendorId, productId: d.productId })
+        sRenderAccepted(r.devices); sMsg('removed ' + d.name)
+      })
+      li.append(name, id, rm); ul.appendChild(li)
+    }
+  }
+
+  function sRenderPorts(ports) {
+    const ul = $('s-ports'); ul.innerHTML = ''
+    if (!ports.length) {
+      const li = document.createElement('li'); li.className = 's-empty'
+      li.textContent = 'no serial ports visible — plug the device in'
+      ul.appendChild(li); return
+    }
+    for (const p of ports) {
+      const li = document.createElement('li')
+      const name = document.createElement('span'); name.className = 's-name'
+      name.textContent = p.displayName || p.portName // device-supplied: never as HTML
+      const id = document.createElement('span'); id.className = 's-id'
+      id.textContent = sHasIds(p) ? sId(p.vendorId, p.productId) + ' · ' + p.portName : p.portName + ' · no USB id'
+      const pick = document.createElement('button')
+      if (sHasIds(p)) {
+        pick.textContent = 'Test'
+        pick.addEventListener('click', () => { sChosen = p; K.pickSerialPort(p.portId) })
+      } else {
+        // Without USB ids the port can't be recognised after a restart, so it
+        // can't be accepted — Bluetooth and built-in ports end up here.
+        pick.textContent = 'Not usable'; pick.disabled = true
+      }
+      li.append(name, id, pick); ul.appendChild(li)
+    }
+  }
+
+  async function sCloseProbe() {
+    sReading = false
+    try { if (sReader) await sReader.cancel() } catch {}
+    try { if (sReader) sReader.releaseLock() } catch {}
+    sReader = null
+    try { if (sPort) await sPort.close() } catch {}
+  }
+
+  async function sOpenProbe() {
+    await sPort.open({ baudRate: Number($('s-baud').value) })
+    sReading = true
+    const dec = new TextDecoder()
+    sReader = sPort.readable.getReader()
+    try {
+      while (sReading) {
+        const { value, done } = await sReader.read()
+        if (done) break
+        sBytes += value.length
+        // Control characters other than line breaks become a middle dot, so a
+        // binary device still shows *that* it talks, not garbage.
+        sText = (sText + dec.decode(value, { stream: true }).replace(/[^\x20-\x7e\n\r\t -￿]/g, '·')).slice(-2000)
+        $('s-data').textContent = sText
+        $('s-bytes').textContent = sBytes
+      }
+    } catch (err) {
+      if (sReading) sMsg('read error: ' + err.message)
+    } finally {
+      try { if (sReader) sReader.releaseLock() } catch {}
+      sReader = null
+    }
+  }
+
+  if (K && K.serialDevices) {
+    K.serialDevices().then(sRenderAccepted)
+    K.onSerialPorts(sRenderPorts)
+  } else {
+    sRenderAccepted([])
+  }
+
+  $('s-search').addEventListener('click', async () => {
+    if (!K || !K.pickSerialPort) return sMsg('(not running inside the kiosk app)')
+    if (!navigator.serial) return sMsg('Web Serial is not available in this window')
+    if ($('s-search').disabled) return
+    $('s-search').disabled = true
+    await sCloseProbe()
+    $('s-probe').hidden = true
+    $('s-ports').innerHTML = ''
+    $('s-chooser').hidden = false
+    sMsg('looking for ports…')
+    try {
+      sPort = await navigator.serial.requestPort()
+      $('s-chooser').hidden = true
+      sBytes = 0; sText = ''
+      $('s-bytes').textContent = '0'
+      $('s-data').textContent = '— scan or send something —'
+      $('s-probe-name').textContent = (sChosen && (sChosen.displayName || sChosen.portName)) || 'serial port'
+      $('s-probe').hidden = false
+      sMsg('port open — scan or send something to confirm it is the right device')
+      sOpenProbe().catch((err) => sMsg('could not open the port: ' + err.message))
+    } catch (err) {
+      $('s-chooser').hidden = true
+      sPort = null
+      sMsg(err && err.name === 'NotFoundError' ? 'cancelled' : 'error: ' + (err && err.message))
+    } finally {
+      $('s-search').disabled = false
+    }
+  })
+
+  $('s-cancel').addEventListener('click', () => { if (K && K.pickSerialPort) K.pickSerialPort(null) })
+
+  $('s-baud').addEventListener('change', async () => {
+    if (!sPort) return
+    await sCloseProbe()
+    sOpenProbe().catch((err) => sMsg('could not reopen the port: ' + err.message))
+  })
+
+  $('s-accept').addEventListener('click', async () => {
+    if (!sPort || !K || !K.saveSerialDevice) return
+    const info = sPort.getInfo()
+    const name = (sChosen && (sChosen.displayName || sChosen.portName)) || 'Serial device'
+    const r = await K.saveSerialDevice({ vendorId: info.usbVendorId, productId: info.usbProductId, name })
+    if (!r.ok) return sMsg(r.error || 'could not save')
+    // Release the port: the kiosk page opens it next, and a serial port has
+    // only one owner at a time.
+    await sCloseProbe(); sPort = null
+    $('s-probe').hidden = true
+    sRenderAccepted(r.devices)
+    sMsg('accepted ' + name + ' — saved to ' + r.written)
+  })
+
+  $('s-discard').addEventListener('click', async () => {
+    await sCloseProbe(); sPort = null
+    $('s-probe').hidden = true
+    sMsg('')
   })
 
   if (K && K.onDiag) K.onDiag(onDiag)

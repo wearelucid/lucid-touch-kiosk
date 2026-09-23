@@ -103,6 +103,7 @@ account. Installed there, the config goes to Application Support for everyone.
 | `zoom` / `ZOOM` | `1` | Page zoom (`2.5` = 250%); touch stays aligned |
 | `maxTouchPoints` / `MAX_TOUCH_POINTS` | `10` | `1` disables multitouch entirely |
 | `allowPageZoom` / `ALLOW_PAGE_ZOOM` | `false` | `false` blocks pinch-zoom and overscroll bounce, keeps scroll and in-page multitouch |
+| `serialDevices` | `[]` | Serial devices the kiosk page may use — [see below](#serial-devices) |
 
 ### Rotated and portrait panels
 
@@ -164,6 +165,30 @@ press Save raw descriptors, which writes every connected device's descriptor to
 > WebHID is granted only to the app's own bundled pages. A remote kiosk URL
 > never gets raw HID access.
 
+### Serial devices
+
+A kiosk page can use serial devices — a barcode scanner, a card reader — through
+the Web Serial API. In Chrome, `navigator.serial.requestPort()` opens a dialog
+where the user picks a port. The kiosk shows no dialog: visitors stand in front
+of it. Instead, devices are accepted once on the test page:
+
+1. Test page → 8 · Serial devices → **Search serial devices**. All serial ports
+   appear, including ones plugged in afterwards.
+2. **Test** opens a port and shows what it sends; scan or send something to
+   confirm it's the right device.
+3. **Accept device** stores it in `config.json`.
+
+From then on the kiosk page receives the accepted device without a dialog, both
+when it calls `requestPort()` and when it calls `getPorts()` to reconnect after
+a restart. Only the origin of the configured `url` gets access; a page the
+kiosk navigates to elsewhere does not.
+
+Devices are stored by USB vendor and product id, not serial number, so a
+replacement unit of the same model works without setting it up again. The baud
+rate isn't stored — the page passes it when it opens the port. Ports without a
+USB id (Bluetooth, built-in) can't be recognised after a restart and so can't
+be accepted.
+
 ## When touch doesn't work
 
 The diagnostics section of the test page answers four questions without a
@@ -183,9 +208,19 @@ The live report feed separates cases a device list cannot:
 | Bytes arriving, `0 contacts` while touching | Tip-switch offset is wrong. |
 | No reports, status red | Not a layout problem — read the status hint (permission or cable). |
 
-On a configured kiosk, blank out `url` to return to the test page. `DIAGNOSE=1`
-prints all HID devices to stdout; run the packaged binary from Terminal to see
-it.
+On a configured kiosk, blank out `url` to return to the test page.
+
+To see the app's log, launch it with `open` and send the output to a file:
+
+```sh
+open -n "path/to/Lucid Touch Kiosk.app" --stdout ~/kiosk.log --stderr ~/kiosk.log --env DIAGNOSE=1
+```
+
+`DIAGNOSE=1` adds a list of every connected HID device. Don't start the binary
+directly from a terminal instead: macOS then attributes the app's permission
+requests to the terminal, so Input Monitoring and Bluetooth are checked against
+the terminal's grants, not the app's — permissions seem to be missing, or to
+survive rebuilds, for no apparent reason.
 
 If a panel cannot be brought up, three things allow profiling it later without
 the hardware: `hid-descriptors.json` from Save raw descriptors, the `DIAGNOSE=1`

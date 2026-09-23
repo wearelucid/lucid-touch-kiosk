@@ -21,6 +21,15 @@ contextBridge.exposeInMainWorld('lucidKiosk', {
   // and persist the result (vid/pid + layout); the window reloads after save
   deriveLayout: (devices) => ipcRenderer.invoke('kiosk:deriveLayout', devices),
   savePanel: (p) => ipcRenderer.invoke('kiosk:savePanel', p),
+  // window 2: serial devices — the test page's own chooser (Electron has none)
+  // and the list of accepted device models kept in config.json
+  onSerialPorts: (cb) => {
+    ipcRenderer.on('kiosk:serialPorts', (_e, ports) => cb(ports))
+  },
+  pickSerialPort: (portId) => ipcRenderer.invoke('kiosk:pickSerialPort', portId),
+  serialDevices: () => ipcRenderer.invoke('kiosk:serialDevices'),
+  saveSerialDevice: (d) => ipcRenderer.invoke('kiosk:saveSerialDevice', d),
+  removeSerialDevice: (d) => ipcRenderer.invoke('kiosk:removeSerialDevice', d),
   // window 2: escape hatch when deriveLayout fails — dump the raw descriptors
   // (same devices array) to a file so an unknown panel can be profiled by hand
   dumpDescriptors: (devices) => ipcRenderer.invoke('kiosk:dumpDescriptors', devices),
