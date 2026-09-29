@@ -239,6 +239,11 @@ warnings from the kiosk page's own console, failed page loads, crashed helper
 processes, and unexpected exceptions in the app itself — which would otherwise
 put an error dialog on the kiosk screen. Individual touches are not logged.
 
+Errors from the page are logged with their actual message — `InvalidStateError:
+The port is already open.` rather than the `[object DOMException]` the page's
+console output alone would give — including those from before the page
+finished loading.
+
 ```
 2026-09-29 09:08:30.558  WARN   serial   the page asked for a port but no visible port is accepted
 2026-09-29 09:08:32.576  WARN   serial   refused a port request from http://127.0.0.1:8732

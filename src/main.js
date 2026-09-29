@@ -15,6 +15,7 @@ const { resolveRotation } = require('./parse')
 const { originOf, isBundled, pickAcceptedPort, serialAllowed, addDevice, removeDevice } = require('./serial')
 const { deriveFromDevices } = require('./derive')
 const { createLogger } = require('./logger')
+const { createConsoleRouter } = require('./pageconsole')
 
 // The folder holding the .app — where config.json and logs/ live, so a kiosk
 // is one self-contained folder. Not in an applications folder though: loose
@@ -264,9 +265,20 @@ function createKioskWindow(config, { test } = {}) {
     agentConfig.touchRotation + '°',
     config.touchRotation == null ? '(from display)' : '(from config)',
   )
+  // The page's own warnings and errors — a kiosk page's "failed to connect"
+  // only ever reaches its console, which nobody sees on a kiosk. The DevTools
+  // protocol the touch agent attaches keeps console arguments apart, so a
+  // DOMException reads "InvalidStateError: The port is already open." where
+  // Electron's console-message only has "[object DOMException]" (both
+  // measured). pageconsole.js decides which of the two logs each message.
+  const pageLog = scoped(test ? 'testpage' : 'page')
+  const pageConsole = createConsoleRouter((entry) => pageLog[entry.level](entry.text))
   const startAgent = () => {
     ownAgent = startTouchAgent(wc, agentConfig, touchLog, onDiag)
     agent = ownAgent
+    // The agent attaches and enables Runtime at once; if that never shows up,
+    // stop holding the page's early messages back.
+    setTimeout(() => pageConsole.giveUpWaiting(), 5000)
   }
   const stopOwnAgent = () => {
     if (!ownAgent) return
@@ -276,22 +288,30 @@ function createKioskWindow(config, { test } = {}) {
   }
 
   wc.once('dom-ready', startAgent)
-  // The page's own warnings and errors — a kiosk page's "failed to connect"
-  // only ever reaches its console, which nobody sees on a kiosk.
-  const pageLog = scoped(test ? 'testpage' : 'page')
+  wc.debugger.on('message', (_e, method, params) => {
+    // Runtime.enable reports the execution context first, then replays the
+    // console messages from before it (order measured).
+    if (method === 'Runtime.executionContextCreated') pageConsole.protocolEnabled(Date.now())
+    else pageConsole.fromProtocol(method, params)
+  })
   wc.on('console-message', (e, lvl, msg, line, source) => {
     // Electron 44 passes one details object; older versions positional args.
     const level = typeof e.level === 'string' ? e.level : ['verbose', 'info', 'warning', 'error'][lvl]
     const message = e.message ?? msg
     const where = (e.sourceId ?? source) ? ` (${e.sourceId ?? source}:${e.lineNumber ?? line})` : ''
-    if (level === 'error') pageLog.error(message + where)
-    else if (level === 'warning') pageLog.warn(message + where)
+    const entry =
+      level === 'error' ? { level: 'error', text: message + where }
+      : level === 'warning' ? { level: 'warn', text: message + where }
+      : null
+    pageConsole.fromConsoleMessage(entry, wc.debugger.isAttached())
   })
   wc.on('did-fail-load', (_e, code, desc, validatedURL) => {
     log.error('page failed to load:', code, desc, '→', validatedURL, '(black screen)')
+    pageConsole.fallBack() // no dom-ready, no agent, no protocol coming
   })
   wc.debugger.on('detach', (_e, reason) => {
     log('debugger detached:', reason)
+    pageConsole.fallBack()
     stopOwnAgent()
   })
   wc.on('render-process-gone', (_e, details) => {
