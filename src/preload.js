@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld('lucidKiosk', {
   },
   pickSerialPort: (portId) => ipcRenderer.invoke('kiosk:pickSerialPort', portId),
   serialDevices: () => ipcRenderer.invoke('kiosk:serialDevices'),
+  // window 2: where the log file is, and a way to get to it without a terminal
+  logInfo: () => ipcRenderer.invoke('kiosk:logInfo'),
+  openLogs: () => ipcRenderer.invoke('kiosk:openLogs'),
   saveSerialDevice: (d) => ipcRenderer.invoke('kiosk:saveSerialDevice', d),
   removeSerialDevice: (d) => ipcRenderer.invoke('kiosk:removeSerialDevice', d),
   // window 2: escape hatch when deriveLayout fails — dump the raw descriptors

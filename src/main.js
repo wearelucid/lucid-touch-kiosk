@@ -14,8 +14,45 @@ const { startTouchAgent } = require('./touch-agent')
 const { resolveRotation } = require('./parse')
 const { originOf, isBundled, pickAcceptedPort, serialAllowed, addDevice, removeDevice } = require('./serial')
 const { deriveFromDevices } = require('./derive')
+const { createLogger } = require('./logger')
 
-const log = (...a) => console.log('[kiosk]', ...a)
+// The folder holding the .app — where config.json and logs/ live, so a kiosk
+// is one self-contained folder. Not in an applications folder though: loose
+// files don't belong there, and it's writable only for admins, so the same app
+// would behave differently per account.
+function besideApp() {
+  return path.resolve(path.dirname(app.getPath('exe')), '../../../')
+}
+function inApplicationsFolder(dir) {
+  return ['/Applications', path.join(app.getPath('home'), 'Applications')].includes(dir)
+}
+
+function logDir() {
+  if (!app.isPackaged) return path.join(app.getAppPath(), 'logs')
+  const beside = besideApp()
+  return inApplicationsFolder(beside) ? app.getPath('logs') : path.join(beside, 'logs')
+}
+
+// Beside the app when possible; macOS's own log folder if that isn't writable
+// (a read-only volume, say) rather than no log at all.
+let logger = createLogger({ dir: logDir() })
+if (!logger.path) logger = createLogger({ dir: app.getPath('logs') })
+
+// One logger per area; log(...) is info, log.warn / log.error the other levels.
+const scoped = (area) =>
+  Object.assign((...a) => logger.info(area, ...a), {
+    warn: (...a) => logger.warn(area, ...a),
+    error: (...a) => logger.error(area, ...a),
+  })
+const log = scoped('app')
+const serialLog = scoped('serial')
+const touchLog = scoped('touch')
+
+// Without these, an exception in the main process shows Electron's error
+// dialog on the kiosk screen — in front of visitors, with nobody to click it —
+// and leaves no trace once dismissed.
+process.on('uncaughtException', (err) => log.error('uncaught exception:', err))
+process.on('unhandledRejection', (reason) => log.error('unhandled promise rejection:', reason))
 const hex = (n) => '0x' + (n || 0).toString(16).padStart(4, '0')
 
 const DEFAULTS = {
@@ -91,7 +128,7 @@ function loadConfig(configPath) {
     file = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     log('config from', configPath)
   } catch {
-    log('config: unreadable, using defaults (', configPath, ')')
+    log.warn('config unreadable, using defaults:', configPath)
   }
   return applyEnv({ ...DEFAULTS, ...file })
 }
@@ -116,9 +153,8 @@ function loadConfig(configPath) {
 function configDirCandidates() {
   if (!app.isPackaged) return [app.getAppPath()]
   const userData = app.getPath('userData')
-  const beside = path.resolve(path.dirname(app.getPath('exe')), '../../../')
-  const appFolders = ['/Applications', path.join(app.getPath('home'), 'Applications')]
-  return appFolders.includes(beside) ? [userData] : [beside, userData]
+  const beside = besideApp()
+  return inApplicationsFolder(beside) ? [userData] : [beside, userData]
 }
 
 function writeJsonFile(filename, obj) {
@@ -229,7 +265,7 @@ function createKioskWindow(config, { test } = {}) {
     config.touchRotation == null ? '(from display)' : '(from config)',
   )
   const startAgent = () => {
-    ownAgent = startTouchAgent(wc, agentConfig, log, onDiag)
+    ownAgent = startTouchAgent(wc, agentConfig, touchLog, onDiag)
     agent = ownAgent
   }
   const stopOwnAgent = () => {
@@ -240,15 +276,26 @@ function createKioskWindow(config, { test } = {}) {
   }
 
   wc.once('dom-ready', startAgent)
+  // The page's own warnings and errors — a kiosk page's "failed to connect"
+  // only ever reaches its console, which nobody sees on a kiosk.
+  const pageLog = scoped(test ? 'testpage' : 'page')
+  wc.on('console-message', (e, lvl, msg, line, source) => {
+    // Electron 44 passes one details object; older versions positional args.
+    const level = typeof e.level === 'string' ? e.level : ['verbose', 'info', 'warning', 'error'][lvl]
+    const message = e.message ?? msg
+    const where = (e.sourceId ?? source) ? ` (${e.sourceId ?? source}:${e.lineNumber ?? line})` : ''
+    if (level === 'error') pageLog.error(message + where)
+    else if (level === 'warning') pageLog.warn(message + where)
+  })
   wc.on('did-fail-load', (_e, code, desc, validatedURL) => {
-    log('LOAD FAILED', code, desc, '→', validatedURL, '(black screen)')
+    log.error('page failed to load:', code, desc, '→', validatedURL, '(black screen)')
   })
   wc.debugger.on('detach', (_e, reason) => {
     log('debugger detached:', reason)
     stopOwnAgent()
   })
   wc.on('render-process-gone', (_e, details) => {
-    log('renderer gone:', details.reason, '— reloading')
+    log.error('renderer gone:', details.reason, '— reloading')
     stopOwnAgent()
     next.reload()
     wc.once('dom-ready', startAgent)
@@ -346,7 +393,7 @@ function logSerialGrant(origin, device) {
   const key = origin + '|' + vid + ':' + pid
   if (serialGrantsLogged.has(key)) return
   serialGrantsLogged.add(key)
-  log('serial: handed', device.displayName || device.name || vid + ':' + pid, 'to', origin)
+  serialLog('handed', device.displayName || device.name || vid + ':' + pid, 'to', origin)
 }
 
 function sendSerialPorts() {
@@ -392,7 +439,7 @@ function setupDevicePermissions() {
       // unanswered one, and a closed page must not leave the request hanging.
       if (serialPick) serialPick.callback('')
       serialPick = { callback, wc, ports: portList.map(summarizePort) }
-      log('serial: chooser open on the test page —', portList.length, 'port(s) visible')
+      serialLog('chooser open on the test page —', portList.length, 'port(s) visible')
       wc.once('destroyed', () => {
         if (serialPick && serialPick.wc === wc) {
           serialPick.callback('')
@@ -406,12 +453,12 @@ function setupDevicePermissions() {
       const id = pickAcceptedPort(portList, serialDevices())
       if (id) logSerialGrant(origin, portList.find((p) => p.portId === id))
       if (!id)
-        log('serial: the page asked for a port but no visible port is accepted —',
+        serialLog.warn('the page asked for a port but no visible port is accepted —',
           'set one up on the test page (', portList.length, 'port(s) visible )')
       callback(id)
       return
     }
-    log('serial: refused a port request from', origin || '(unknown origin)')
+    serialLog.warn('refused a port request from', origin || '(unknown origin)')
     callback('')
   })
 
@@ -466,7 +513,7 @@ ipcMain.handle('kiosk:deriveLayout', (_e, devices) => {
     log('wizard derived layout:', JSON.stringify(r.layout), 'warnings:', r.warnings.length)
     return { ok: true, ...r }
   } catch (err) {
-    log('wizard derive failed:', err.message)
+    log.warn('wizard derive failed:', err.message)
     return { ok: false, error: err.message }
   }
 })
@@ -492,7 +539,7 @@ ipcMain.handle('kiosk:savePanel', (_e, p = {}) => {
 ipcMain.handle('kiosk:dumpDescriptors', (_e, devices) => {
   const written = writeJsonFile('hid-descriptors.json', devices)
   if (written) log('dumped HID descriptors →', written)
-  else log('dumping HID descriptors failed: no writable location')
+  else log.warn('dumping HID descriptors failed: no writable location')
   return written
     ? { ok: true, written }
     : { ok: false, error: 'could not write hid-descriptors.json to any candidate location' }
@@ -508,7 +555,7 @@ ipcMain.handle('kiosk:pickSerialPort', (_e, portId) => {
   if (!serialPick) return { ok: false }
   const chosen = serialPick.ports.find((p) => p.portId === portId)
   const known = Boolean(chosen)
-  log('serial: operator', known ? 'picked ' + (chosen.displayName || chosen.portName) : 'cancelled the chooser')
+  serialLog('operator', known ? 'picked ' + (chosen.displayName || chosen.portName) : 'cancelled the chooser')
   serialPick.callback(known ? portId : '')
   serialPick = null
   return { ok: known }
@@ -523,7 +570,7 @@ ipcMain.handle('kiosk:saveSerialDevice', (_e, d = {}) => {
   pending = pending || loadSeed()
   pending.serialDevices = addDevice(pending.serialDevices, d)
   const written = writeConfig(pending)
-  log('accepted serial device', d.vendorId + ':' + d.productId, d.name || '', '→', written)
+  serialLog('accepted', d.vendorId + ':' + d.productId, d.name || '', '→', written)
   return { ok: true, written, devices: pending.serialDevices }
 })
 
@@ -531,7 +578,7 @@ ipcMain.handle('kiosk:removeSerialDevice', (_e, d = {}) => {
   pending = pending || loadSeed()
   pending.serialDevices = removeDevice(pending.serialDevices, d)
   const written = writeConfig(pending)
-  log('removed serial device', d.vendorId + ':' + d.productId, '→', written)
+  serialLog('removed', d.vendorId + ':' + d.productId, '→', written)
   return { ok: true, written, devices: pending.serialDevices }
 })
 
@@ -578,7 +625,13 @@ ipcMain.handle('kiosk:launch', (_e, opts = {}) => {
 
 // --- boot ------------------------------------------------------------------
 
+ipcMain.handle('kiosk:logInfo', () => ({ path: logger.path }))
+ipcMain.handle('kiosk:openLogs', () =>
+  logger.path ? shell.openPath(path.dirname(logger.path)).then((err) => ({ ok: !err, error: err })) : { ok: false },
+)
+
 app.whenReady().then(() => {
+  log('start', app.getName(), app.getVersion(), '· electron', process.versions.electron, '· log', logger.path || '(stdout only)')
   setupDevicePermissions()
   const start = () => {
     const ext = findExternalConfig()
@@ -605,6 +658,13 @@ app.on('before-quit', () => {
     agent.stop()
     agent = null
   }
+  log('quitting')
+  logger.flush()
+})
+
+// GPU, network or device-service helpers dying take features down silently.
+app.on('child-process-gone', (_e, details) => {
+  if (details.reason !== 'clean-exit') log.error('helper process gone:', details.type, details.reason, details.exitCode)
 })
 
 app.on('window-all-closed', () => {

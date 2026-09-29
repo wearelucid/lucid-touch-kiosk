@@ -90,6 +90,9 @@ const REPORT_THROTTLE_MS = 100
  * @returns {{ stop: () => void }}
  */
 function startTouchAgent(webContents, config, log, onDiag) {
+  // Levels where the logger offers them; a plain function logs everything as-is.
+  const warn = log.warn || log
+  const error = log.error || log
   if (process.env.DIAGNOSE) listDevices(log)
   // Touch-report layout: config.touchReport if present, else the SiS default.
   const layout = config.touchReport || undefined
@@ -119,7 +122,7 @@ function startTouchAgent(webContents, config, log, onDiag) {
   try {
     if (!dbg.isAttached()) dbg.attach('1.3')
   } catch (err) {
-    log('debugger attach failed:', err.message)
+    error('debugger attach failed:', err.message)
   }
   const send = (method, params) => dbg.sendCommand(method, params)
 
@@ -208,7 +211,7 @@ function startTouchAgent(webContents, config, log, onDiag) {
       // next problem is already on screen once the cable is sorted out.
       const perm = probePermission(all)
       const message = `touchscreen not found (VID 0x${hex4(config.hidVendorId)} PID 0x${hex4(config.hidProductId)})`
-      log(message, `— input monitoring: ${perm} — retrying`)
+      warn(message, `— input monitoring: ${perm} — retrying`)
       diag('status', {
         state: 'error',
         reason: 'not-found',
@@ -232,7 +235,7 @@ function startTouchAgent(webContents, config, log, onDiag) {
         perm === 'denied'
           ? 'Input Monitoring is not granted — the panel is connected but macOS blocks reading it'
           : `found the panel but could not open it: ${err.message}`
-      log(message, `— input monitoring: ${perm} — retrying`)
+      warn(message, `— input monitoring: ${perm} — retrying`)
       diag('status', {
         state: 'error',
         reason,
@@ -265,7 +268,7 @@ function startTouchAgent(webContents, config, log, onDiag) {
       if (ev) dispatch(ev)
     })
     device.on('error', (err) => {
-      log('device error', err.message, '— reopening')
+      error('device error', err.message, '— reopening')
       diag('status', {
         state: 'error',
         reason: 'device-error',
@@ -301,7 +304,7 @@ function startTouchAgent(webContents, config, log, onDiag) {
   const vpTimer = setInterval(refreshViewport, 1000)
   init()
     .then(openWithRetry)
-    .catch((err) => log('init failed:', err.message))
+    .catch((err) => error('init failed:', err.message))
 
   return {
     /**

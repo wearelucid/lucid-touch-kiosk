@@ -210,21 +210,52 @@ The live report feed separates cases a device list cannot:
 
 On a configured kiosk, blank out `url` to return to the test page.
 
-To see the app's log, launch it with `open` and send the output to a file:
+Everything the app notices ends up in its [log](#log). To also list every
+connected HID device there, start it with `DIAGNOSE=1`:
 
 ```sh
-open -n "path/to/Lucid Touch Kiosk.app" --stdout ~/kiosk.log --stderr ~/kiosk.log --env DIAGNOSE=1
+open -n "path/to/Lucid Touch Kiosk.app" --env DIAGNOSE=1
 ```
 
-`DIAGNOSE=1` adds a list of every connected HID device. Don't start the binary
-directly from a terminal instead: macOS then attributes the app's permission
-requests to the terminal, so Input Monitoring and Bluetooth are checked against
-the terminal's grants, not the app's — permissions seem to be missing, or to
-survive rebuilds, for no apparent reason.
+Always start the app from Finder or with `open`, never by running the binary
+from a terminal: macOS then attributes the app's permission requests to the
+terminal, so Input Monitoring and Bluetooth are checked against the terminal's
+grants instead — permissions seem to be missing, or to survive rebuilds, for no
+apparent reason.
 
 If a panel cannot be brought up, three things allow profiling it later without
-the hardware: `hid-descriptors.json` from Save raw descriptors, the `DIAGNOSE=1`
-output, and what the status line and live reports showed.
+the hardware: `hid-descriptors.json` from Save raw descriptors, the log from a
+`DIAGNOSE=1` start, and what the status line and live reports showed.
+
+## Log
+
+The app writes `logs/kiosk.log` next to itself — or to
+`~/Library/Logs/Lucid Touch Kiosk/` when installed in an applications folder.
+The test page shows the path and has an **Open log folder** button.
+
+It records serial events (search, pick, accept, hand-over to the page,
+refusals), touch panel state (found, lost, permission missing), errors and
+warnings from the kiosk page's own console, failed page loads, crashed helper
+processes, and unexpected exceptions in the app itself — which would otherwise
+put an error dialog on the kiosk screen. Individual touches are not logged.
+
+```
+2026-09-29 09:08:30.558  WARN   serial   the page asked for a port but no visible port is accepted
+2026-09-29 09:08:32.576  WARN   serial   refused a port request from http://127.0.0.1:8732
+```
+
+It is built to run unattended for months:
+
+- **Repeats collapse.** A message recurring within a minute of its last
+  occurrence is counted, not written. A retry loop — the panel is missing, a
+  page keeps failing to reconnect — becomes one line plus
+  `— repeated 1 799× since 14:00:02`, written when it stops, hourly while it
+  lasts, and on quit.
+- **Size is capped.** At 5 MB `kiosk.log` rotates to `kiosk.1.log` …
+  `kiosk.4.log` and the oldest is dropped: 25 MB at most, however long the kiosk
+  runs.
+- **Nothing is lost on a crash.** Every line is on disk the moment it's
+  written.
 
 ## Build from source
 

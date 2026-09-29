@@ -247,6 +247,12 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
 #d-actions button { padding: 12px 18px; }
 #d-actions #d-open-im { background: var(--ink); color: var(--paper); border: 0; }
 #d-act-msg { font-size: 13px; color: var(--ink-faint); }
+.dlog {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 0 0;
+  font-size: 13px; color: var(--ink-faint);
+}
+.dlog #d-logpath { font: 400 12px var(--mono); color: var(--ink-soft); word-break: break-all; }
+.dlog button { padding: 10px 14px; }
 
 .dcols { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 #d-devs { width: 100%; border-collapse: collapse; font: 400 12px var(--mono); }
@@ -383,6 +389,8 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
       <button id="d-relaunch">Relaunch app</button>
       <span id="d-act-msg" class="dim"></span>
     </div>
+    <p class="dlog">Log: <span id="d-logpath">—</span>
+      <button id="d-openlogs">Open log folder</button></p>
     <details>
       <summary>Details — HID devices, live reports, active layout</summary>
       <div class="dcols">
@@ -935,6 +943,14 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
     $('s-probe').hidden = true
     sMsg('')
   })
+
+  // ---- log file -----------------------------------------------------------------
+  if (K && K.logInfo) {
+    K.logInfo().then((r) => { $('d-logpath').textContent = (r && r.path) || 'not writable — stdout only' })
+    $('d-openlogs').addEventListener('click', () => K.openLogs())
+  } else {
+    $('d-openlogs').disabled = true
+  }
 
   if (K && K.onDiag) K.onDiag(onDiag)
   else $('d-status').textContent = '(not running inside the kiosk app — no diagnostics)'

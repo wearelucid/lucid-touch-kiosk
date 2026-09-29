@@ -5,3 +5,6 @@ dist/
 
 # generated at first run (display picker / panel wizard) — machine-specific
 config.json
+
+# written next to the app (and in the project root in dev)
+logs/
