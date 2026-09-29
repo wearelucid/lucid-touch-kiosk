@@ -56,6 +56,10 @@ process.on('uncaughtException', (err) => log.error('uncaught exception:', err))
 process.on('unhandledRejection', (reason) => log.error('unhandled promise rejection:', reason))
 const hex = (n) => '0x' + (n || 0).toString(16).padStart(4, '0')
 
+// Reloading a kiosk page that failed to load: 2 s, 4 s, 8 s … then every 30 s.
+const RETRY_FIRST_MS = 2000
+const RETRY_MAX_MS = 30000
+
 const DEFAULTS = {
   url: '', // empty → the built-in test page
   hidVendorId: 0x0457,
@@ -305,10 +309,46 @@ function createKioskWindow(config, { test } = {}) {
       : null
     pageConsole.fromConsoleMessage(entry, wc.debugger.isAttached())
   })
-  wc.on('did-fail-load', (_e, code, desc, validatedURL) => {
-    log.error('page failed to load:', code, desc, '→', validatedURL, '(black screen)')
-    pageConsole.fallBack() // no dom-ready, no agent, no protocol coming
+  // A kiosk started at login usually beats the network: its first load fails
+  // with ERR_INTERNET_DISCONNECTED (measured on a login item) and, without a
+  // retry, it stays a black screen until someone restarts it. So the kiosk page
+  // is reloaded after a failure, backing off to every 30 s, for as long as it
+  // takes — the same covers a DNS hiccup or a server that's briefly down.
+  let retryDelay = RETRY_FIRST_MS
+  let failedLoads = 0
+  let retryTimer = null
+  // After a failed load Chromium shows its own (blank) error page, and that
+  // page's did-finish-load arrives right behind did-fail-load (measured: 5 ms).
+  // It must not count as the page having loaded.
+  let errorPageLoading = false
+  wc.on('did-fail-load', (_e, code, desc, validatedURL, isMainFrame) => {
+    // Subframes don't blank the screen, and ERR_ABORTED (-3) only means another
+    // navigation replaced this one.
+    if (!isMainFrame || code === -3) return
+    errorPageLoading = true
+    // Held-back page console messages go out now rather than wait for a
+    // protocol that may not come for this document.
+    pageConsole.fallBack()
+    if (test) return log.error('page failed to load:', code, desc, '→', validatedURL)
+    // Constant text, so a long outage collapses into one line and a count.
+    log.error('page failed to load:', code, desc, '→', validatedURL, '— retrying')
+    failedLoads++
+    clearTimeout(retryTimer)
+    retryTimer = setTimeout(() => {
+      if (!next.isDestroyed()) next.loadURL(normalizeUrl(config.url))
+    }, retryDelay)
+    retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS)
   })
+  wc.on('did-finish-load', () => {
+    if (errorPageLoading) {
+      errorPageLoading = false
+      return
+    }
+    if (failedLoads) log('page loaded after', failedLoads, 'failed attempt(s)')
+    failedLoads = 0
+    retryDelay = RETRY_FIRST_MS
+  })
+  next.on('closed', () => clearTimeout(retryTimer))
   wc.debugger.on('detach', (_e, reason) => {
     log('debugger detached:', reason)
     pageConsole.fallBack()

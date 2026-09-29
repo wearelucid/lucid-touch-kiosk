@@ -73,6 +73,10 @@ enumerating devices. The panel is USB, so **Don't Allow** is fine.
 Each choice is written to `config.json` as it is made — see
 [Configuration](#configuration) for where that file lives.
 
+If the page can't be loaded — typically right after login, before the network
+is up — the kiosk keeps retrying (after 2, 4, 8 s, then every 30 s) until it
+loads, so a kiosk started as a login item doesn't stay on a black screen.
+
 To quit a running kiosk, press ⌘Q.
 
 ## Configuration
