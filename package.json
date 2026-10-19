@@ -48,13 +48,24 @@
           "arch": [
             "arm64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
         }
       ],
+      "artifactName": "LucidTouchKiosk-${version}-${arch}.${ext}",
       "electronLanguages": [
         "en"
       ],
-      "identity": null,
       "category": "public.app-category.utilities",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
       "extendInfo": {
         "NSBluetoothAlwaysUsageDescription": "Not used. The HID library enumerates input devices, which touches the Bluetooth API on macOS; you can deny this — the USB touchscreen still works."
       }

@@ -223,3 +223,31 @@ test('round-trip: contact-ID-less layout falls back to block index at parse time
     assert.ok(Math.abs(out[i].nx - (1000 + i) / 4095) < 1e-9)
   })
 })
+
+const { deriveAllDevices } = require('../src/derive')
+
+test('deriveAllDevices: every digitizer is a hit, every other device an error, nothing throws', () => {
+  const mouse = { vendorId: 1, productId: 1, productName: 'Mouse',
+    collections: [{ usagePage: 1, usage: 2, children: [], inputReports: [] }] }
+  const flip = { vendorId: 0x25b5, productId: 0x54, productName: 'Flip', collections: sisCollections() }
+  const sis = { vendorId: 0x0457, productId: 0x6595, productName: 'SiS', collections: sisCollections() }
+  const r = deriveAllDevices([mouse, flip, sis])
+  assert.deepEqual(r.hits.map((h) => h.productName), ['Flip', 'SiS'])
+  assert.equal(r.hits[0].layout.maxContacts, 5)
+  assert.equal(r.errors.length, 1)
+  assert.equal(r.errors[0].productName, 'Mouse')
+  assert.match(r.errors[0].error, /digitizer|touch/i)
+  assert.deepEqual(deriveAllDevices([]), { hits: [], errors: [] })
+  assert.deepEqual(deriveAllDevices(undefined), { hits: [], errors: [] })
+})
+
+test('deriveAllDevices: errors say whether the device even has a digitizer collection', () => {
+  const mouse = { vendorId: 1, productId: 1, productName: 'Mouse',
+    collections: [{ usagePage: 1, usage: 2, children: [], inputReports: [] }] }
+  // A digitizer whose X has no logicalMaximum — rejected, but it IS a touchscreen.
+  const oddItems = contactItems().map((it) => (it.usages && it.usages[0] === X ? { ...it, logicalMaximum: 0 } : it))
+  const odd = { vendorId: 2, productId: 2, productName: 'Odd', collections: collections(oddItems) }
+  const { hits, errors } = deriveAllDevices([mouse, odd])
+  assert.equal(hits.length, 0)
+  assert.deepEqual(errors.map((e) => [e.productName, e.digitizer]), [['Mouse', false], ['Odd', true]])
+})

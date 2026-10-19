@@ -5,6 +5,7 @@
 
 const HID = require('node-hid')
 const { parseContacts, rotate, SIS_LAYOUT } = require('./parse')
+const { createHoldDetector } = require('./gesture')
 
 // Injected on every document: block page pinch-zoom + rubber-band bounce while
 // keeping scroll AND in-site multitouch (touch events still reach the page).
@@ -87,9 +88,12 @@ const REPORT_THROTTLE_MS = 100
  * @param {(ev: object) => void} [onDiag] receives diagnostics events
  *   (`config` | `devices` | `status` | `report`). Only wired up for the test
  *   page; in kiosk mode it is undefined and nothing is collected.
- * @returns {{ stop: () => void }}
+ * @param {() => void} [onGesture] called once per five-finger hold — the
+ *   kiosk's way back into setup. Only created when the panel can report
+ *   five contacts; a two-finger panel keeps the keyboard shortcut alone.
+ * @returns {{ stop: () => void, rescan: () => void, setRotation: (deg: number) => void }}
  */
-function startTouchAgent(webContents, config, log, onDiag) {
+function startTouchAgent(webContents, config, log, onDiag, onGesture) {
   // Levels where the logger offers them; a plain function logs everything as-is.
   const warn = log.warn || log
   const error = log.error || log
@@ -97,6 +101,10 @@ function startTouchAgent(webContents, config, log, onDiag) {
   // Touch-report layout: config.touchReport if present, else the SiS default.
   const layout = config.touchReport || undefined
   let rotation = Number(config.touchRotation) || 0
+  const hold =
+    onGesture && Number(config.maxTouchPoints) >= 5
+      ? createHoldDetector({ fingers: 5, holdMs: 3000, maxDriftPx: 40 })
+      : null
   log('touch layout:', layout ? 'from config.touchReport' : 'built-in SiS default')
   if (rotation) log('touch rotation:', rotation + '°')
 
@@ -176,13 +184,15 @@ function startTouchAgent(webContents, config, log, onDiag) {
     send('Input.dispatchTouchEvent', ev).catch(() => {})
   }
 
-  const toEvent = (contacts) => {
-    const cur = contacts.map((c) => {
-      // Rotate first, scale second: the panel's frame is normalized, the
-      // viewport's is not, so swapping axes after scaling would stretch them.
+  // Rotate first, scale second: the panel's frame is normalized, the
+  // viewport's is not, so swapping axes after scaling would stretch them.
+  const toPoints = (contacts) =>
+    contacts.map((c) => {
       const r = rotate(c.nx, c.ny, rotation)
       return { id: c.id, x: Math.round(r.nx * vp.w), y: Math.round(r.ny * vp.h) }
     })
+
+  const toEvent = (cur) => {
     const curMap = new Map(cur.map((p) => [p.id, p]))
     let type = null
     if (cur.some((p) => !prev.has(p.id))) type = 'touchStart'
@@ -202,6 +212,24 @@ function startTouchAgent(webContents, config, log, onDiag) {
 
   const openWithRetry = () => {
     if (stopped) return
+    if (config.hidVendorId == null || config.hidProductId == null) {
+      // Nothing to look for yet — the setup page is deriving a panel from
+      // WebHID. Still enumerate and probe, so step 2 of the checklist has its
+      // permission verdict before a panel is even chosen.
+      const all = HID.devices()
+      diag('devices', { devices: all.map(summarize) })
+      const perm = probePermission(all)
+      warn('no touchscreen configured yet', `— input monitoring: ${perm} — waiting`)
+      diag('status', {
+        state: 'error',
+        reason: 'not-configured',
+        message: 'no touchscreen configured yet — plug the panel in, the setup page finds it',
+        deviceCount: all.length,
+        inputMonitoring: perm,
+      })
+      scheduleRetry()
+      return
+    }
     const { all, touch } = scanDevices(config)
     diag('devices', { devices: all.map(summarize) })
 
@@ -264,7 +292,16 @@ function startTouchAgent(webContents, config, log, onDiag) {
         .slice()
         .sort((a, b) => a.id - b.id)
         .slice(0, config.maxTouchPoints)
-      const ev = toEvent(capped)
+      const pts = toPoints(capped)
+      if (hold && hold.feed(pts, Date.now())) {
+        log('five-finger hold — opening setup')
+        try {
+          onGesture()
+        } catch (err) {
+          error('gesture handler failed:', err.message)
+        }
+      }
+      const ev = toEvent(pts)
       if (ev) dispatch(ev)
     })
     device.on('error', (err) => {

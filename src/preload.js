@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld('lucidKiosk', {
   // window 2: panel wizard — derive a touchReport from WebHID descriptors,
   // and persist the result (vid/pid + layout); the window reloads after save
   deriveLayout: (devices) => ipcRenderer.invoke('kiosk:deriveLayout', devices),
+  // window 2: step 3 — every derivable digitizer, no throw
+  deriveAll: (devices) => ipcRenderer.invoke('kiosk:deriveAll', devices),
+  // window 2: everything the checklist derives its step states from
+  setupInfo: () => ipcRenderer.invoke('kiosk:setupInfo'),
+  // window 2: step 5 — is the URL reachable from here, right now
+  checkUrl: (url) => ipcRenderer.invoke('kiosk:checkUrl', url),
   savePanel: (p) => ipcRenderer.invoke('kiosk:savePanel', p),
   // window 2: serial devices — the test page's own chooser (Electron has none)
   // and the list of accepted device models kept in config.json
