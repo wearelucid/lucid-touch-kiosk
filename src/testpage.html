@@ -398,6 +398,7 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
         <ul class="s-list" id="s-accepted"></ul>
         <div id="s-chooser">
           <h3>Available ports <span class="dim">— a device plugged in now appears here</span></h3>
+          <p id="s-find-row"><button id="s-find" class="md">Find serial devices</button></p>
           <ul class="s-list" id="s-ports"></ul>
         </div>
         <div id="s-probe" hidden>
@@ -965,6 +966,7 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
   }
 
   function sRenderPorts(ports) {
+    $('s-find-row').hidden = true
     const ul = $('s-ports'); ul.innerHTML = ''
     if (!ports.length) {
       const li = document.createElement('li'); li.className = 's-empty'
@@ -1050,13 +1052,19 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
       sOpenProbe().catch((err) => sMsg('could not open the port: ' + err.message))
     } catch (err) {
       sPort = null
-      if (!(err && err.name === 'NotFoundError')) sMsg('error: ' + (err && err.message))
+      // Chromium only shows a port request on a user gesture (measured in the
+      // packaged app: SecurityError when the step activates by itself). The
+      // automatic attempt still works right after a tap on Accept, Discard or
+      // Change; otherwise the operator presses the button.
+      if (err && err.name === 'SecurityError') { $('s-find-row').hidden = false; sMsg('') }
+      else if (!(err && err.name === 'NotFoundError')) sMsg('error: ' + (err && err.message))
     } finally {
       sChooserOpen = false
     }
   }
   function sLeave() { if (sChooserOpen && K && K.pickSerialPort) K.pickSerialPort(null) }
   stepHooks.serial = () => { sMsg(''); sOpenChooser() }
+  $('s-find').addEventListener('click', () => { $('s-find-row').hidden = true; sOpenChooser() })
   renderExtras.push((steps) => {
     const st = steps.find((x) => x.id === 'serial')
     const shown = st.state === 'active' || st.state === 'blocked' || S.open === 'serial'
