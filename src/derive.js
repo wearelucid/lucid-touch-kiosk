@@ -218,24 +218,45 @@ function deriveTouchReport(collections) {
  * @param {Array<{vendorId:number,productId:number,productName?:string,collections:Array}>} devices
  * @returns {{ layout: object, warnings: string[], vendorId: number, productId: number, productName: string }}
  */
-function deriveFromDevices(devices) {
-  if (!devices || !devices.length) throw new Error('no HID devices visible to WebHID')
-  const errors = []
+/**
+ * Derive a layout for every device that has one. Nothing is thrown: the page
+ * lists the hits (one → use it, several → choose) and shows the errors for
+ * the rest, so an unknown panel is still diagnosable.
+ * @returns {{ hits: Array<object>, errors: Array<{vendorId,productId,productName,error}> }}
+ */
+function deriveAllDevices(devices) {
   const hits = []
-  for (const d of devices) {
+  const errors = []
+  for (const d of devices || []) {
+    const ident = { vendorId: d.vendorId, productId: d.productId, productName: d.productName || '' }
     try {
-      hits.push({
-        ...deriveTouchReport(d.collections),
-        vendorId: d.vendorId,
-        productId: d.productId,
-        productName: d.productName || '',
-      })
+      hits.push({ ...deriveTouchReport(d.collections), ...ident })
     } catch (err) {
-      errors.push(`${d.productName || 'device'} ${d.vendorId}:${d.productId} — ${err.message}`)
+      // `digitizer` lets the page tell "this is a touchscreen we can't read"
+      // from "this is a mouse": only the former deserves the raw-descriptor
+      // fallback, the latter is just the cable not being plugged in yet.
+      errors.push({ ...ident, error: err.message, digitizer: hasDigitizer(d.collections) })
     }
   }
+  return { hits, errors }
+}
+
+// Any touchscreen collection (usage page 0x0D Digitizer, usage 0x04 Touch
+// Screen) anywhere in the tree.
+function hasDigitizer(collections) {
+  return (collections || []).some(
+    (c) => (c.usagePage === 0x0d && c.usage === 0x04) || hasDigitizer(c.children),
+  )
+}
+
+function deriveFromDevices(devices) {
+  if (!devices || !devices.length) throw new Error('no HID devices visible to WebHID')
+  const { hits, errors } = deriveAllDevices(devices)
   if (!hits.length)
-    throw new Error(`no touch digitizer among ${devices.length} HID device(s):\n${errors.join('\n')}`)
+    throw new Error(
+      `no touch digitizer among ${devices.length} HID device(s):\n` +
+        errors.map((e) => `${e.productName || 'device'} ${e.vendorId}:${e.productId} — ${e.error}`).join('\n'),
+    )
   if (hits.length > 1)
     hits[0].warnings.push(
       `${hits.length} touch digitizers found — using ${hits[0].productName || hits[0].vendorId + ':' + hits[0].productId}`,
@@ -243,4 +264,4 @@ function deriveFromDevices(devices) {
   return hits[0]
 }
 
-module.exports = { deriveTouchReport, deriveFromDevices }
+module.exports = { deriveTouchReport, deriveFromDevices, deriveAllDevices }

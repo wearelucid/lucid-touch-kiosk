@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Hardened Runtime is mandatory for notarisation. Electron's V8 needs
+         JIT and writable executable memory; node-hid is a native module that
+         is not signed by our identity, so library validation must be off. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Deliberately NOT sandboxed: raw HID access via node-hid and the
+         config/log files next to the .app need the full filesystem. -->
+  </dict>
+</plist>

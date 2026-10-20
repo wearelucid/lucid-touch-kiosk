@@ -7,13 +7,15 @@
 // One app = Chromium renderer + node-hid in the main process; no external
 // browser, no debugging port.
 
-const { app, BrowserWindow, screen, ipcMain, shell, session } = require('electron')
+const { app, BrowserWindow, screen, ipcMain, shell, session, net } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const { startTouchAgent } = require('./touch-agent')
 const { resolveRotation } = require('./parse')
-const { originOf, isBundled, pickAcceptedPort, serialAllowed, addDevice, removeDevice } = require('./serial')
-const { deriveFromDevices } = require('./derive')
+const { originOf, isBundled, sameSite, pickAcceptedPort, serialAllowed, addDevice, removeDevice } = require('./serial')
+const { deriveFromDevices, deriveAllDevices } = require('./derive')
+const { pickDisplay } = require('./setup-state')
+const { verdictFromResponse, verdictFromError } = require('./urlcheck')
 const { createLogger } = require('./logger')
 const { createConsoleRouter } = require('./pageconsole')
 
@@ -61,15 +63,18 @@ const RETRY_FIRST_MS = 2000
 const RETRY_MAX_MS = 30000
 
 const DEFAULTS = {
-  url: '', // empty → the built-in test page
-  hidVendorId: 0x0457,
-  hidProductId: 0x6595,
+  url: '', // empty → the built-in setup/test page
+  hidVendorId: null, // null = no panel chosen yet; the setup page derives one from WebHID
+  hidProductId: null,
   maxTouchPoints: 10,
   allowPageZoom: false,
+  hideCursor: false, // kiosk only: the setup page always keeps the pointer
   displayIndex: 1,
   zoom: 1,
   touchRotation: null, // null = follow the display's rotation; 0|90|180|270 overrides
+  touchVerified: false, // the five corner taps landed; reset whenever the panel changes
   serialDevices: [], // [{ vendorId, productId, name }] accepted on the test page
+  serialSkipped: false, // operator said "no serial devices" in setup
 }
 
 const TEST_PAGE = path.join(__dirname, 'testpage.html')
@@ -121,6 +126,7 @@ function applyEnv(cfg) {
   if (process.env.KIOSK_URL) cfg.url = process.env.KIOSK_URL
   if (process.env.MAX_TOUCH_POINTS) cfg.maxTouchPoints = Number(process.env.MAX_TOUCH_POINTS)
   if (process.env.ALLOW_PAGE_ZOOM) cfg.allowPageZoom = true
+  if (process.env.HIDE_CURSOR) cfg.hideCursor = process.env.HIDE_CURSOR !== '0'
   if (process.env.DISPLAY_INDEX) cfg.displayIndex = Number(process.env.DISPLAY_INDEX)
   if (process.env.ZOOM) cfg.zoom = Number(process.env.ZOOM)
   if (process.env.TOUCH_ROTATION) cfg.touchRotation = Number(process.env.TOUCH_ROTATION)
@@ -277,8 +283,10 @@ function createKioskWindow(config, { test } = {}) {
   // measured). pageconsole.js decides which of the two logs each message.
   const pageLog = scoped(test ? 'testpage' : 'page')
   const pageConsole = createConsoleRouter((entry) => pageLog[entry.level](entry.text))
+  // The kiosk page has no bridge, so both ways back are handled here.
+  const onGesture = test ? undefined : () => openSetup()
   const startAgent = () => {
-    ownAgent = startTouchAgent(wc, agentConfig, touchLog, onDiag)
+    ownAgent = startTouchAgent(wc, agentConfig, touchLog, onDiag, onGesture)
     agent = ownAgent
     // The agent attaches and enables Runtime at once; if that never shows up,
     // stop holding the page's early messages back.
@@ -291,7 +299,37 @@ function createKioskWindow(config, { test } = {}) {
     ownAgent = null
   }
 
+  if (test) {
+    // Step 1 derives from the live display list: a touchscreen plugged in after
+    // launch, or a projector pulled during a diagnostics visit, must show.
+    const displaysChanged = () => {
+      if (!next.isDestroyed()) next.webContents.send('kiosk:diag', { type: 'displays' })
+    }
+    for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(ev, displaysChanged)
+    next.on('closed', () => {
+      for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) screen.off(ev, displaysChanged)
+    })
+  }
+  if (!test) {
+    wc.on('before-input-event', (e, input) => {
+      if (input.type === 'keyDown' && input.meta && input.shift && input.code === 'Comma') {
+        e.preventDefault()
+        openSetup()
+      }
+    })
+  }
+
   wc.once('dom-ready', startAgent)
+  if (!test && config.hideCursor) {
+    // A kiosk is set up with a mouse, so the pointer sits wherever it was last
+    // left — and a digitizer macOS also sees as a mouse drags it along under
+    // every touch. There is no native hide in Electron and no CDP flag, so it's
+    // CSS: on every dom-ready, because each navigation starts a fresh document,
+    // and `!important` on `*` so the page cannot bring it back.
+    wc.on('dom-ready', () => {
+      wc.insertCSS('*, *::before, *::after { cursor: none !important }').catch(() => {})
+    })
+  }
   wc.debugger.on('message', (_e, method, params) => {
     // Runtime.enable reports the execution context first, then replays the
     // console messages from before it (order measured).
@@ -366,6 +404,7 @@ function createKioskWindow(config, { test } = {}) {
       query: {
         url: config.url || '',
         zoom: String(config.zoom || 1),
+        hideCursor: config.hideCursor ? '1' : '0',
         rot: config.touchRotation == null ? 'auto' : String(config.touchRotation),
       },
     })
@@ -375,6 +414,14 @@ function createKioskWindow(config, { test } = {}) {
 
   // Close the previous window only after the new one exists (never hit 0 windows).
   if (prev && !prev.isDestroyed()) prev.destroy()
+}
+
+// From a running kiosk back into the checklist — a panel swap or a new serial
+// device must not require editing config.json. config.url stays set, so a
+// restart in the meantime boots into the kiosk, not into setup.
+function openSetup() {
+  log('setup requested from the kiosk')
+  createKioskWindow(pending || loadSeed(), { test: true })
 }
 
 // --- window 1: display picker ----------------------------------------------
@@ -509,7 +556,7 @@ function setupDevicePermissions() {
       sendSerialPorts()
       return
     }
-    if (origin && origin === kioskOrigin()) {
+    if (sameSite(origin, kioskOrigin())) {
       const id = pickAcceptedPort(portList, serialDevices())
       if (id) logSerialGrant(origin, portList.find((p) => p.portId === id))
       if (!id)
@@ -547,8 +594,10 @@ ipcMain.handle('setup:chooseDisplay', (_e, index) => {
 
 ipcMain.handle('kiosk:save', (_e, p = {}) => {
   pending = pending || loadSeed()
+  const previousDisplay = pending.displayIndex
   if (typeof p.url === 'string') pending.url = p.url.trim()
   if (p.zoom) pending.zoom = Number(p.zoom) || 1
+  if (typeof p.hideCursor === 'boolean') pending.hideCursor = p.hideCursor
   if (Number.isInteger(p.displayIndex)) pending.displayIndex = p.displayIndex
   if ('touchRotation' in p) {
     // null puts it back to following the display; a number overrides. Applied
@@ -557,8 +606,13 @@ ipcMain.handle('kiosk:save', (_e, p = {}) => {
     pending.touchRotation = p.touchRotation == null ? null : Number(p.touchRotation) || 0
     if (agent) agent.setRotation(resolveRotation(pending.touchRotation, displayRotation))
   }
+  if (typeof p.touchVerified === 'boolean') pending.touchVerified = p.touchVerified
+  if (typeof p.serialSkipped === 'boolean') pending.serialSkipped = p.serialSkipped
   const written = writeConfig(pending)
-  log('saved config', written, '·', JSON.stringify({ url: pending.url, zoom: pending.zoom }))
+  log('saved config', written, '·', JSON.stringify({ url: pending.url, zoom: pending.zoom, hideCursor: pending.hideCursor }))
+  // A new display means a new window; the setup page comes back on it.
+  if (Number.isInteger(p.displayIndex) && p.displayIndex !== previousDisplay)
+    createKioskWindow(pending, { test: true })
   return { ok: true, written }
 })
 
@@ -578,6 +632,50 @@ ipcMain.handle('kiosk:deriveLayout', (_e, devices) => {
   }
 })
 
+ipcMain.handle('kiosk:deriveAll', (_e, devices) => {
+  const r = deriveAllDevices(devices)
+  if (r.hits.length) log('derived', r.hits.length, 'digitizer layout(s)')
+  return r
+})
+
+// What the checklist needs to derive its step states: the config as it stands
+// and the displays as the OS sees them. Called on load and after every save.
+ipcMain.handle('kiosk:setupInfo', () => {
+  const primaryId = screen.getPrimaryDisplay().id
+  return {
+    config: { ...(pending || loadSeed()) },
+    displays: screen.getAllDisplays().map((d, index) => ({
+      index,
+      width: d.bounds.width,
+      height: d.bounds.height,
+      internal: Boolean(d.internal),
+      primary: d.id === primaryId,
+    })),
+  }
+})
+
+// Reachability only — a typo or a dead DNS name should fail here, not as a
+// black fullscreen. Never gates Start: an intranet host may be down now and
+// fine at boot, and the kiosk's reload-with-backoff covers that.
+ipcMain.handle('kiosk:checkUrl', async (_e, raw) => {
+  const url = normalizeUrl(raw)
+  if (!url) return { ok: false, error: 'no URL', url }
+  const attempt = async (method) => {
+    const res = await net.fetch(url, { method, redirect: 'follow', signal: AbortSignal.timeout(5000) })
+    const v = verdictFromResponse(res)
+    return v.retryWithGet && method === 'HEAD' ? attempt('GET') : v
+  }
+  try {
+    const v = await attempt('HEAD')
+    log('url check', url, '→', v.ok ? 'ok ' + v.status : 'failed: ' + v.error)
+    return { ...v, url }
+  } catch (err) {
+    const v = verdictFromError(err)
+    log.warn('url check', url, '→', v.error)
+    return { ...v, url }
+  }
+})
+
 // Persist a wizard result. The running agent read its config at start, so the
 // test window is recreated — createKioskWindow keeps the window count above
 // zero, and the fresh agent opens the new panel.
@@ -586,6 +684,7 @@ ipcMain.handle('kiosk:savePanel', (_e, p = {}) => {
   if (Number.isInteger(p.hidVendorId)) pending.hidVendorId = p.hidVendorId
   if (Number.isInteger(p.hidProductId)) pending.hidProductId = p.hidProductId
   if (p.touchReport && typeof p.touchReport === 'object') pending.touchReport = p.touchReport
+  pending.touchVerified = false // a new panel is unverified by definition
   const written = writeConfig(pending)
   log('saved panel config', written, '·', hex(pending.hidVendorId) + ':' + hex(pending.hidProductId))
   createKioskWindow(pending, { test: true })
@@ -696,7 +795,15 @@ app.whenReady().then(() => {
   const start = () => {
     const ext = findExternalConfig()
     if (!ext) {
-      enterDisplayPicker()
+      const i = pickDisplay(screen.getAllDisplays())
+      if (i == null) {
+        enterDisplayPicker()
+        return
+      }
+      log('SETUP — display', i, 'chosen automatically')
+      pending = { ...loadSeed(), displayIndex: i }
+      writeConfig(pending)
+      createKioskWindow(pending, { test: true })
       return
     }
     const cfg = loadConfig(ext)

@@ -124,6 +124,8 @@ h2 {
 .cfgbar input:focus, .cfgbar select:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
 .cfgbar #cfg-url { width: 320px; max-width: 60vw; }
 .cfgbar #cfg-zoom { width: 88px; }
+.cfgbar label.check { flex-direction: row; align-items: center; gap: 8px; padding-bottom: 12px; }
+.cfgbar label.check input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--ink); }
 #launch {
   background: var(--ink); color: var(--paper); border: 0;
   border-radius: var(--radius-sm); padding: 12px 22px;
@@ -234,18 +236,12 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
 }
 .dstat.ok { border-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
 .dstat.bad { border-color: var(--bad); background: var(--bad-bg); color: var(--bad); }
-#d-hint { margin-top: 8px; line-height: 1.55; max-width: 78ch; }
-#d-hint:empty { display: none; }
 .dperm { margin-top: 8px; font-size: 14px; color: var(--ink-soft); }
 .dperm:empty { display: none; }
 .dperm b.granted { color: var(--ok); }
 .dperm b.denied { color: var(--bad); }
 .dperm b.unknown { color: var(--warn); }
 
-#d-actions { display: none; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
-#d-actions.on { display: flex; }
-#d-actions button { padding: 12px 18px; }
-#d-actions #d-open-im { background: var(--ink); color: var(--paper); border: 0; }
 #d-act-msg { font-size: 13px; color: var(--ink-faint); }
 .dlog {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 0 0;
@@ -298,31 +294,151 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
 }
 #s-data { max-height: 200px; overflow: auto; }
 
-/* --- panel wizard ---------------------------------------------------------- */
-#d-wizard { margin-top: 20px; }
-#d-wizard #w-save { background: var(--ink); color: var(--paper); border: 0; }
-#d-wizard pre { margin-top: 10px; }
+/* --- setup checklist -------------------------------------------------------- */
+.steps { list-style: none; margin: 0 0 28px; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius); overflow: hidden; background: var(--paper); }
+.step { border-top: 1px solid var(--line); }
+.step:first-child { border-top: 0; }
+.step .head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; }
+.step .mark { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); flex: none; box-sizing: border-box; }
+.step.done .mark, .step.skipped .mark { background: var(--ink); border-color: var(--ink); }
+.step.active .mark { border-color: var(--ink); box-shadow: 0 0 0 4px var(--accent); }
+.step.blocked .mark { background: var(--bad); border-color: var(--bad); }
+.step .title { font-weight: 500; white-space: nowrap; }
+.step .summary { color: var(--ink-faint); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step .change { margin-left: auto; visibility: hidden; }
+.step.done .change, .step.skipped .change { visibility: visible; }
+.step .body { display: none; padding: 0 18px 18px 48px; }
+.step.active .body, .step.blocked .body, .step.open .body { display: block; }
+.step.pending { opacity: .45; }
+.step .body p { margin: 8px 0; max-width: 78ch; }
+.primary { background: var(--ink); color: var(--paper); border: 0; }
+.bad { color: var(--bad); }
+#disp-list button, #p-candidates button { display: block; margin: 6px 0; }
+#tryout > h2 { margin-top: 8px; }
+
 #w-msg { white-space: pre-line; font-size: 13px; color: var(--ink-faint); }
 </style>
+<script src="setup-state.js"></script>
 </head>
 <body>
   <h1>Lucid Touch Kiosk — Test &amp; Setup</h1>
-  <p class="lede">Test touch below. Set the kiosk URL + zoom and press Launch (blank URL keeps this test page).</p>
+  <p class="lede">Plug the touchscreen in and follow the list. Each step ticks itself off.</p>
 
-  <div class="cfgbar">
-    <label>URL <input id="cfg-url" placeholder="blank = keep test page" /></label>
-    <label>Zoom <input id="cfg-zoom" type="number" min="0.5" max="5" step="0.25" value="1" /></label>
-    <label>Touch rotation
-      <select id="cfg-rot">
-        <option value="auto">Auto (display)</option>
-        <option value="0">0°</option>
-        <option value="90">90°</option>
-        <option value="180">180°</option>
-        <option value="270">270°</option>
-      </select></label>
-    <button id="launch">Launch ▶</button>
-    <span id="launch-msg" class="dim"></span>
-  </div>
+  <ol class="steps" id="steps">
+    <li class="step pending" id="step-display" data-step="display">
+      <div class="head"><span class="mark"></span><span class="title">1 · Display</span><span class="summary"></span>
+        <button class="change" data-change="display">Change</button></div>
+      <div class="body">
+        <p class="dim">The touchscreen's display. Tapping the corners in step 3 confirms it.</p>
+        <div id="disp-list"></div>
+      </div>
+    </li>
+    <li class="step pending" id="step-permission" data-step="permission">
+      <div class="head"><span class="mark"></span><span class="title">2 · Permission</span><span class="summary"></span></div>
+      <div class="body">
+        <p>macOS asks whether this app may <b>monitor input</b>. That is how it reads the touchscreen — click <b>Allow</b>.</p>
+        <p class="dim">macOS 14+ also asks about Bluetooth while scanning USB devices. <b>Don't Allow</b> is correct: the panel is USB.</p>
+        <div id="perm-blocked" hidden>
+          <p class="bad" id="perm-why"></p>
+          <p>1. <button id="d-open-im">Open System Settings</button> <span class="dim">enable Lucid Touch Kiosk — if it is not listed, add it with +</span></p>
+          <p>2. <button id="d-relaunch" class="primary">Relaunch app</button> <span class="dim">a permission granted while the app is running does not reach it</span></p>
+          <details><summary>Still not working?</summary>
+            <p class="dim">The grant is tied to the exact binary. After a rebuild, remove the entry in Input Monitoring and add the app again — an entry from an older build does not apply.</p>
+          </details>
+          <span id="d-act-msg" class="dim"></span>
+        </div>
+      </div>
+    </li>
+    <li class="step pending" id="step-panel" data-step="panel">
+      <div class="head"><span class="mark"></span><span class="title">3 · Touch panel</span><span class="summary"></span>
+        <button class="change" data-change="panel">Change</button></div>
+      <div class="body" id="panel-body">
+        <p id="p-text"></p>
+        <div id="p-candidates"></div>
+        <div id="p-verify" hidden>
+          <p>Tap the <b>four corners</b> and the <b>centre</b>. <b id="p-count">0</b> / 5</p>
+          <div id="p-rot" hidden>
+            <p class="bad">A tap landed far from its mark — the panel is probably mounted rotated. Try:</p>
+            <label>Touch rotation
+              <select id="cfg-rot">
+                <option value="auto">Auto (display)</option>
+                <option value="0">0°</option><option value="90">90°</option>
+                <option value="180">180°</option><option value="270">270°</option>
+              </select></label>
+          </div>
+        </div>
+        <div id="p-blocked" hidden>
+          <p class="bad" id="p-why"></p>
+          <button id="d-rescan">Re-scan now</button>
+        </div>
+        <div id="p-fail" hidden>
+          <p class="bad">A HID device was found but no touch layout could be derived from it:</p>
+          <pre id="p-errors"></pre>
+          <p><button id="w-dump">Save raw descriptors</button> <span class="dim">then describe <code>touchReport</code> by hand — see the README.</span> <span id="w-msg" class="dim"></span></p>
+        </div>
+        <details id="p-details">
+          <summary>Details — HID devices, live reports, active layout, log</summary>
+          <h3>HID devices <span class="dim" id="d-count"></span></h3>
+          <table id="d-devs"><tbody></tbody></table>
+          <h3>Live reports <span class="dim">— touch the panel</span></h3>
+          <div class="dparsed" id="d-parsed">no reports received yet</div>
+          <pre id="d-hex">—</pre>
+          <p class="dim"><b id="d-rate">0</b> reports/s · <b id="d-seq">0</b> total (display throttled to ~10/s)</p>
+          <h3>Active layout</h3>
+          <pre id="d-layout">—</pre>
+          <p class="dlog">Log: <span id="d-logpath">—</span> <button id="d-openlogs">Open log folder</button></p>
+        </details>
+      </div>
+    </li>
+    <li class="step pending" id="step-serial" data-step="serial">
+      <div class="head"><span class="mark"></span><span class="title">4 · Serial devices</span><span class="summary"></span>
+        <button class="change" data-change="serial">Change</button></div>
+      <div class="body" id="serial-body">
+        <p>Printer, scanner, sensor? <b>Plug it in now</b> — it appears below. Test it, then accept it;
+          the kiosk page may open accepted models without asking. A visitor never sees a chooser.</p>
+        <h3>Accepted</h3>
+        <ul class="s-list" id="s-accepted"></ul>
+        <div id="s-chooser">
+          <h3>Available ports <span class="dim">— a device plugged in now appears here</span></h3>
+          <p id="s-find-row"><button id="s-find" class="md">Find serial devices</button></p>
+          <ul class="s-list" id="s-ports"></ul>
+        </div>
+        <div id="s-probe" hidden>
+          <h3>Live data — <span id="s-probe-name"></span></h3>
+          <label class="s-baud">Baud (for this test only — the page sets its own)
+            <select id="s-baud">
+              <option>9600</option><option>19200</option><option>38400</option>
+              <option>57600</option><option selected>115200</option>
+            </select></label>
+          <pre id="s-data">— scan or send something —</pre>
+          <p class="dim"><b id="s-bytes">0</b> bytes received</p>
+          <div class="taps">
+            <button id="s-accept" class="md">Accept device</button>
+            <button id="s-discard" class="md">Discard</button>
+          </div>
+        </div>
+        <div class="taps">
+          <button id="s-skip" class="md">No devices, continue</button>
+          <span id="s-msg" class="dim"></span>
+        </div>
+      </div>
+    </li>
+    <li class="step pending" id="step-url" data-step="url">
+      <div class="head"><span class="mark"></span><span class="title">5 · URL and start</span><span class="summary"></span>
+        <button class="change" data-change="url">Change</button></div>
+      <div class="body">
+        <div class="cfgbar">
+          <label>URL <input id="cfg-url" placeholder="kiosk.example.org/start" /></label>
+          <label>Zoom <input id="cfg-zoom" type="number" min="0.5" max="5" step="0.25" value="1" /></label>
+          <label class="check"><input id="cfg-cursor" type="checkbox" /> Hide mouse pointer</label>
+          <button id="url-check">Check</button>
+          <button id="launch" class="primary">Start kiosk ▶</button>
+          <button id="back-kiosk" hidden>Back to kiosk</button>
+          <span id="launch-msg" class="dim"></span>
+        </div>
+      </div>
+    </li>
+  </ol>
 
   <div class="bar">
     <span>last: <b id="t-type">—</b></span>
@@ -335,6 +451,8 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
     <span class="dim">viewport <b id="t-vp">—</b> · dpr <b id="t-dpr">—</b></span>
   </div>
 
+  <section id="tryout" hidden>
+  <h2>Try it out</h2>
   <div class="grid">
     <section>
       <h2>1 · Tap targets</h2>
@@ -377,86 +495,6 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
     </section>
   </div>
 
-  <section id="diag">
-    <h2>7 · Touch panel diagnostics</h2>
-    <!-- Status (and, on failure, the fix) stays visible; the detail is folded away. -->
-    <div id="d-status" class="dstat">waiting for the touch agent…</div>
-    <div id="d-perm" class="dperm"></div>
-    <div id="d-hint" class="dim"></div>
-    <div id="d-actions">
-      <button id="d-open-im">Open Input Monitoring settings</button>
-      <button id="d-rescan">Re-scan now</button>
-      <button id="d-relaunch">Relaunch app</button>
-      <span id="d-act-msg" class="dim"></span>
-    </div>
-    <p class="dlog">Log: <span id="d-logpath">—</span>
-      <button id="d-openlogs">Open log folder</button></p>
-    <details>
-      <summary>Details — HID devices, live reports, active layout</summary>
-      <div class="dcols">
-        <div>
-          <h3>HID devices <span class="dim" id="d-count"></span></h3>
-          <table id="d-devs"><tbody></tbody></table>
-          <p class="dim">⌖ = digitizer interface (usage 0d/04). Green = matches the configured ids.</p>
-        </div>
-        <div>
-          <h3>Live reports <span class="dim">— touch the panel</span></h3>
-          <div class="dparsed" id="d-parsed">no reports received yet</div>
-          <pre id="d-hex">—</pre>
-          <p class="dim"><b id="d-rate">0</b> reports/s · <b id="d-seq">0</b> total (display throttled to ~10/s)</p>
-          <h3>Active layout</h3>
-          <pre id="d-layout">—</pre>
-        </div>
-      </div>
-      <div id="d-wizard">
-        <h3>Panel wizard — derive a layout from the descriptor</h3>
-        <p class="dim">For an unknown panel: Chromium parses the HID report descriptor (node-hid on macOS
-          cannot), and the derived <code>touchReport</code> can be saved straight to config.json.</p>
-        <div class="taps">
-          <button id="w-detect" class="md">Detect panel layout</button>
-          <button id="w-save" class="md" hidden>Save &amp; use this layout</button>
-          <button id="w-dump" class="md">Save raw descriptors</button>
-          <span id="w-msg" class="dim"></span>
-        </div>
-        <pre id="w-out" hidden></pre>
-      </div>
-    </details>
-  </section>
-
-  <section id="serial">
-    <h2>8 · Serial devices</h2>
-    <p class="dim">Devices the kiosk page may open via Web Serial — a barcode scanner, a card
-      reader. Chrome asks the user for every connection; a kiosk page never sees a chooser, so
-      only devices accepted here are handed to it. Accepted models are stored in config.json.</p>
-
-    <h3>Accepted</h3>
-    <ul class="s-list" id="s-accepted"></ul>
-
-    <div class="taps">
-      <button id="s-search" class="md">Search serial devices</button>
-      <span id="s-msg" class="dim"></span>
-    </div>
-
-    <div id="s-chooser" hidden>
-      <h3>Available ports <span class="dim">— plug a device in now and it appears here</span></h3>
-      <ul class="s-list" id="s-ports"></ul>
-      <button id="s-cancel" class="md">Cancel</button>
-    </div>
-
-    <div id="s-probe" hidden>
-      <h3>Live data — <span id="s-probe-name"></span></h3>
-      <label class="s-baud">Baud (for this test only — the page sets its own)
-        <select id="s-baud">
-          <option>9600</option><option>19200</option><option>38400</option>
-          <option>57600</option><option selected>115200</option>
-        </select></label>
-      <pre id="s-data">— scan or send something —</pre>
-      <p class="dim"><b id="s-bytes">0</b> bytes received</p>
-      <div class="taps">
-        <button id="s-accept" class="md">Accept device</button>
-        <button id="s-discard" class="md">Discard</button>
-      </div>
-    </div>
   </section>
 
   <!-- viewport-corner calibration targets: tap each, it shows the px gap from centre -->
@@ -469,6 +507,181 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
 <script>
 (function () {
   const $ = (id) => document.getElementById(id)
+  const K = window.lucidKiosk
+  const hex4 = (n) => (n || 0).toString(16).padStart(4, '0')
+
+  // ---- the checklist ----------------------------------------------------------
+  // Everything the step states derive from. Mutate, then render().
+  const S = { info: null, status: null, cornersHit: 0, open: null }
+  const SUMMARY = {
+    display: (st, info) => {
+      const d = info && info.displays[info.config.displayIndex]
+      return d ? `Display ${d.index} — ${d.width}×${d.height}, ${d.internal ? 'built-in' : 'external'}` : 'choose a display'
+    },
+    permission: (st) => ({ waiting: 'checking…', denied: 'denied', 'probably-denied': 'probably denied',
+      unknown: 'cannot tell yet — the panel will show' }[st.reason] || 'granted'),
+    panel: (st) => ({ waiting: 'starting…', searching: 'looking for a touchscreen…', verify: 'panel open — tap the corners',
+      'device-busy': 'panel found but busy', 'device-error': 'connection lost', 'input-monitoring': 'blocked by permission' }[st.reason]
+      || (S.status && S.status.message) || ''),
+    serial: (st, info) => {
+      const n = ((info && info.config.serialDevices) || []).length
+      return st.state === 'skipped' ? 'no serial devices' : n ? `${n} device model${n > 1 ? 's' : ''} accepted` : 'optional'
+    },
+    url: (st, info) => (info && info.config.url) || '',
+  }
+  const activated = new Set() // steps whose hook already ran for this activation
+  const stepHooks = {} // id → fn, attached by the step code below
+  const renderExtras = [] // per-step renderers that need the step object every time
+  function render() {
+    if (!S.info) return
+    const { steps, active } = deriveSteps({ config: S.info.config, displays: S.info.displays, status: S.status, cornersHit: S.cornersHit })
+    // All done and nothing opened by hand: the URL card stays up — it holds
+    // Start kiosk / Back to kiosk, and a URL that was just typed must not
+    // fold the button away under the operator's finger.
+    if (active === null && !S.open) S.open = 'url'
+    for (const st of steps) {
+      const li = $('step-' + st.id)
+      li.className = 'step ' + st.state + (S.open === st.id ? ' open' : '')
+      li.querySelector('.summary').textContent = SUMMARY[st.id](st, S.info)
+      const isActive = st.state === 'active' || st.state === 'blocked' || S.open === st.id
+      if (isActive && !activated.has(st.id)) { activated.add(st.id); if (stepHooks[st.id]) stepHooks[st.id](st) }
+      if (!isActive) activated.delete(st.id)
+    }
+    for (const fn of renderExtras) fn(steps)
+    $('tryout').hidden = !(S.status && S.status.state === 'open')
+    document.body.dataset.active = active || 'none'
+  }
+  async function refreshInfo() { if (K && K.setupInfo) { S.info = await K.setupInfo(); render() } }
+  // "Change" on a finished step re-opens its card without undoing anything.
+  document.querySelectorAll('.change').forEach((b) => b.addEventListener('click', () => {
+    S.open = S.open === b.dataset.change ? null : b.dataset.change; render()
+  }))
+
+  // ---- step 1: display --------------------------------------------------------
+  stepHooks.display = () => {
+    const box = $('disp-list'); box.innerHTML = ''
+    for (const d of S.info.displays) {
+      const b = document.createElement('button')
+      b.textContent = `Display ${d.index} — ${d.width}×${d.height} ${d.internal ? 'built-in' : 'external'}${d.primary ? ' (primary)' : ''}`
+      if (d.index === S.info.config.displayIndex) b.disabled = true
+      // kiosk:save recreates the setup window on the new display; this page goes away.
+      b.addEventListener('click', () => K.save({ displayIndex: d.index }))
+      box.appendChild(b)
+    }
+  }
+
+  // ---- step 2: permission -----------------------------------------------------
+  const WHY = {
+    denied: 'Input Monitoring is denied: the panel is listed, but macOS refuses to let this app read it.',
+    'probably-denied': 'The panel is listed but will not open, and there is no keyboard or mouse to test the permission with — most likely Input Monitoring is not granted.',
+  }
+  renderExtras.push((steps) => {
+    const st = steps.find((x) => x.id === 'permission')
+    $('perm-blocked').hidden = st.state !== 'blocked'
+    $('perm-why').textContent = WHY[st.reason] || ''
+  })
+  const actMsg = (t) => { $('d-act-msg').textContent = t }
+  $('d-open-im').addEventListener('click', () => {
+    if (!K || !K.openInputMonitoring) return actMsg('(not running inside the kiosk app)')
+    actMsg('opening System Settings…')
+    K.openInputMonitoring().then((r) => actMsg(
+      r && r.ok
+        ? 'System Settings opened — enable this app, then Relaunch.'
+        : 'could not open System Settings: ' + ((r && r.error) || 'unknown')))
+  })
+  $('d-relaunch').addEventListener('click', () => {
+    if (!K || !K.relaunch) return actMsg('(not running inside the kiosk app)')
+    actMsg('relaunching…')
+    K.relaunch()
+  })
+  // ---- step 3: touch panel ----------------------------------------------------
+  const PANEL_WHY = {
+    'device-busy': 'The panel is listed and the permission is fine, but it would not open — something else is holding it. Close any browser with a WebHID connection to it.',
+    'device-error': 'The connection dropped after it had been working — usually the cable or a sleeping panel. Reconnecting.',
+    'input-monitoring': 'Blocked by Input Monitoring — see step 2.',
+  }
+  const NOT_FOUND = 'No touchscreen found. Check the USB cable or hub.'
+  let detectTimer = null, saving = false
+  const stopDetecting = () => { clearTimeout(detectTimer); detectTimer = null }
+  const idOf = (h) => hex4(h.vendorId) + ':' + hex4(h.productId)
+  const usePanel = (h) => {
+    if (saving) return
+    saving = true
+    stopDetecting()
+    $('p-text').textContent = 'Saving ' + (h.productName || idOf(h)) + ' — the page reloads with the new panel…'
+    // savePanel recreates this window; a rejection is the only case we survive.
+    K.savePanel({ hidVendorId: h.vendorId, hidProductId: h.productId, touchReport: h.layout })
+      .catch((err) => { saving = false; $('p-text').textContent = 'save failed: ' + err.message })
+  }
+  async function detectOnce() {
+    if (!navigator.hid || !K || !K.deriveAll) return
+    let payload
+    try { payload = await collectHidDevices() } catch (err) { $('p-text').textContent = 'WebHID error: ' + err.message; return }
+    const { hits, errors } = await K.deriveAll(payload)
+    if (!detectTimer) return // the step changed while we were reading
+    const cfg = S.info.config
+    const configured = cfg.hidVendorId != null && cfg.hidProductId != null
+    const box = $('p-candidates')
+    $('p-fail').hidden = true
+    if (hits.length === 1 && !configured) return usePanel(hits[0]) // the plug-and-play case
+    if (hits.length) {
+      // Rebuild only when the set changed — a tap that straddles a rebuild
+      // lands on a button that no longer exists.
+      const key = hits.map(idOf).join(',')
+      if (box.dataset.key === key) return
+      box.dataset.key = key
+      box.innerHTML = ''
+      $('p-text').textContent = hits.length === 1
+        ? 'The configured panel is not there, but this one is:'
+        : hits.length + ' touchscreens found — which one is it?'
+      for (const h of hits) {
+        const b = document.createElement('button')
+        b.textContent = (h.productName || 'touchscreen') + ' (' + idOf(h) + ')' + (hits.length === 1 ? ' — use this panel instead' : '')
+        b.addEventListener('click', () => usePanel(h))
+        box.appendChild(b)
+      }
+      return
+    }
+    box.innerHTML = ''; box.dataset.key = ''
+    $('p-text').textContent = NOT_FOUND
+    // A mouse that isn't a touchscreen is no error; a touchscreen we can't
+    // read is — only then is the raw-descriptor fallback the next step.
+    const unreadable = errors.filter((e) => e.digitizer)
+    if (unreadable.length) {
+      $('p-fail').hidden = false
+      $('p-errors').textContent = unreadable.map((e) => `${e.productName || 'device'} ${idOf(e)} — ${e.error}`).join('\n')
+    }
+  }
+  const detectLoop = async () => {
+    if (!detectTimer) return
+    await detectOnce()
+    if (detectTimer) detectTimer = setTimeout(detectLoop, 2000)
+  }
+  renderExtras.push((steps) => {
+    const st = steps.find((x) => x.id === 'panel')
+    const open = S.status && S.status.state === 'open'
+    $('p-verify').hidden = !open
+    $('p-blocked').hidden = st.state !== 'blocked'
+    $('p-why').textContent = PANEL_WHY[st.reason] || ''
+    const searching = st.reason === 'searching'
+    $('p-candidates').hidden = !searching
+    if (searching && !detectTimer && !saving) detectTimer = setTimeout(detectLoop, 0)
+    if (!searching) {
+      stopDetecting()
+      $('p-fail').hidden = true
+      if (S.status) $('p-text').textContent = open ? S.status.message : (st.reason === 'waiting' ? 'starting the touch agent…' : S.status.message)
+    }
+  })
+
+  // ---- step 5: URL and start --------------------------------------------------
+  $('url-check').addEventListener('click', async () => {
+    if (!K || !K.checkUrl) return ($('launch-msg').textContent = '(not running inside the kiosk app)')
+    const url = $('cfg-url').value.trim()
+    if (!url) return ($('launch-msg').textContent = 'enter a URL first')
+    $('launch-msg').textContent = 'checking…'
+    const r = await K.checkUrl(url)
+    $('launch-msg').textContent = r.ok ? `reachable (${r.status})${r.note ? ' — ' + r.note : ''}` : `not reachable: ${r.error}`
+  })
   const counts = { down: 0, move: 0, up: 0, click: 0 }
   let maxFingers = 0
 
@@ -485,6 +698,7 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
   const q = new URLSearchParams(location.search)
   if (q.get('url')) $('cfg-url').value = q.get('url')
   if (q.get('zoom')) $('cfg-zoom').value = q.get('zoom')
+  $('cfg-cursor').checked = q.get('hideCursor') === '1'
   // live zoom preview — applies to this page as you change the field
   const applyZoom = () => {
     const z = parseFloat($('cfg-zoom').value) || 1
@@ -492,26 +706,30 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
   }
   $('cfg-zoom').addEventListener('input', applyZoom)
   applyZoom() // reflect the prefilled zoom on load
-  // persist url/zoom to config.json as soon as they change (not only on Launch)
-  const save = (partial) => { if (window.lucidKiosk && window.lucidKiosk.save) window.lucidKiosk.save(partial) }
+  // persist url/zoom to config.json as soon as they change (not only on Start)
+  const save = (partial) => (K && K.save ? K.save(partial) : Promise.resolve())
   if (q.get('rot')) $('cfg-rot').value = q.get('rot')
   // Takes effect on the running agent immediately — touch a corner, and if it
   // lands wrong pick the next value. No relaunch, no config editing.
   $('cfg-rot').addEventListener('change', () => {
     const v = $('cfg-rot').value
-    save({ touchRotation: v === 'auto' ? null : Number(v) })
+    // A new rotation is a new geometry: the taps start over, persisted too.
+    save({ touchRotation: v === 'auto' ? null : Number(v), touchVerified: false }).then(refreshInfo)
+    resetCorners()
+    render()
   })
-  $('cfg-zoom').addEventListener('change', () => save({ zoom: parseFloat($('cfg-zoom').value) || 1 }))
-  $('cfg-url').addEventListener('change', () => save({ url: $('cfg-url').value.trim() }))
+  $('cfg-zoom').addEventListener('change', () => save({ zoom: parseFloat($('cfg-zoom').value) || 1 }).then(refreshInfo))
+  // Kiosk only — this page is worked with a mouse, so the pointer stays here.
+  $('cfg-cursor').addEventListener('change', () => save({ hideCursor: $('cfg-cursor').checked }).then(refreshInfo))
+  $('cfg-url').addEventListener('change', () => { S.open = 'url'; save({ url: $('cfg-url').value.trim() }).then(refreshInfo) })
+  // Never disabled by a failed Check: an intranet host may be down right now
+  // and fine at boot, and the kiosk reloads with backoff anyway.
   $('launch').addEventListener('click', () => {
     const url = $('cfg-url').value.trim()
     const zoom = parseFloat($('cfg-zoom').value) || 1
-    if (window.lucidKiosk && window.lucidKiosk.launch) {
-      $('launch-msg').textContent = url ? 'launching ' + url + '…' : 'applying…'
-      window.lucidKiosk.launch({ url, zoom })
-    } else {
-      $('launch-msg').textContent = '(not running inside the kiosk app)'
-    }
+    if (!K || !K.launch) return ($('launch-msg').textContent = '(not running inside the kiosk app)')
+    $('launch-msg').textContent = url ? 'starting ' + url + '…' : 'enter a URL first'
+    if (url) K.launch({ url, zoom })
   })
 
   // drag & drop test
@@ -579,30 +797,40 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
     $('rot').textContent = Math.round(rot)
   }
 
-  // corner calibration targets: show the px gap between the tap and the centre
+  // corner calibration targets: show the px gap between the tap and the centre,
+  // and count distinct marks towards step 3's verification. Touch only: a
+  // mouse in dev must not verify a panel nobody tapped.
+  const hitCorners = new Set()
+  const cornerDistance = (b, e) => {
+    const r = b.getBoundingClientRect()
+    return Math.round(Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)))
+  }
+  const resetCorners = () => {
+    hitCorners.clear(); S.cornersHit = 0; $('p-count').textContent = '0'
+    document.querySelectorAll('.corner').forEach((b) => { b.classList.remove('hit'); b.textContent = b.dataset.c })
+  }
   document.querySelectorAll('.corner').forEach((b) => {
-    b.addEventListener('click', (e) => {
-      const r = b.getBoundingClientRect()
-      const err = Math.round(Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)))
+    b.addEventListener('pointerup', (e) => {
+      if (e.pointerType !== 'touch') return
+      const err = cornerDistance(b, e)
       b.classList.add('hit')
       b.textContent = b.dataset.c + ' ' + err + 'px'
+      if (err > 60) { $('p-rot').hidden = false; return }
+      hitCorners.add(b.dataset.c)
+      S.cornersHit = hitCorners.size
+      $('p-count').textContent = S.cornersHit
+      if (S.cornersHit >= 5 && S.info && !S.info.config.touchVerified) K.save({ touchVerified: true }).then(refreshInfo)
+      render()
     })
   })
+  // A touch that lands near a mark but misses it is the rotation signal too.
+  document.addEventListener('pointerup', (e) => {
+    if (e.pointerType !== 'touch' || $('p-verify').hidden || e.target.closest('.corner')) return
+    const near = [...document.querySelectorAll('.corner')].some((b) => cornerDistance(b, e) < 120)
+    if (near) $('p-rot').hidden = false
+  }, true)
 
   // ---- panel diagnostics (fed from the main process via preload onDiag) -----
-  const hex4 = (n) => (n || 0).toString(16).padStart(4, '0')
-  // Each failure mode gets its own instruction — the whole point of the panel.
-  const HINTS = {
-    'input-monitoring': 'The panel is connected and listed, but macOS refuses to let this app read it — a reference device (keyboard/mouse) could not be opened either, so the denial is global. Grant <b>Input Monitoring</b>, then <b>relaunch</b>: a permission granted while the app is running does not reach it. The grant is tied to the exact binary, so after a rebuild you must remove and re-add the entry — re-adding is not optional, an existing entry from an older build does not apply.',
-    'not-found': 'HID devices are visible, but none with the configured ids. Check the USB cable, or find the panel in the list (⌖ marks digitizers) and put its ids into <code>hidVendorId</code> / <code>hidProductId</code> in config.json.',
-    'device-busy': 'The panel was found and the permission is fine, but it would not open — something else is holding it. Close any browser with a WebHID connection to the panel, then re-scan.',
-    'device-error': 'The connection dropped after it had been working — usually the cable or a sleeping panel. Reconnecting automatically.',
-  }
-  const PERM_TEXT = {
-    granted: 'granted',
-    denied: 'DENIED — this is almost certainly your problem',
-    unknown: 'unknown (no keyboard/mouse available to test with)',
-  }
   let cfgLine = ''
   let lastSeq = 0, lastAt = 0
 
@@ -615,18 +843,10 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
     }
 
     if (ev.type === 'status') {
-      const el = $('d-status')
-      el.textContent = ev.message
-      el.className = 'dstat ' + (ev.state === 'open' ? 'ok' : 'bad')
-      $('d-hint').innerHTML = HINTS[ev.reason] || ''
-      const perm = ev.inputMonitoring
-      $('d-perm').innerHTML = perm
-        ? 'Input Monitoring: <b class="' + perm + '"></b>'
-        : ''
-      if (perm) $('d-perm').querySelector('b').textContent = PERM_TEXT[perm] || perm
-      // Actions are only useful while something is broken.
-      $('d-actions').classList.toggle('on', ev.state !== 'open')
+      S.status = ev
+      render()
     }
+    if (ev.type === 'displays') refreshInfo() // a display came or went
 
     if (ev.type === 'devices') {
       const vid = Number($('d-devs').dataset.vid), pid = Number($('d-devs').dataset.pid)
@@ -675,29 +895,12 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
       }
     }
   }
-  const K = window.lucidKiosk
-  const actMsg = (t) => { $('d-act-msg').textContent = t }
-  $('d-open-im').addEventListener('click', () => {
-    if (!K || !K.openInputMonitoring) return actMsg('(not running inside the kiosk app)')
-    actMsg('opening System Settings…')
-    K.openInputMonitoring().then((r) => actMsg(
-      r && r.ok
-        ? 'System Settings opened — add/enable this app, then press Relaunch.'
-        : 'could not open System Settings: ' + ((r && r.error) || 'unknown')))
-  })
   $('d-rescan').addEventListener('click', () => {
-    if (!K || !K.rescan) return actMsg('(not running inside the kiosk app)')
-    actMsg('re-scanning…')
-    K.rescan().then((r) => actMsg(r && r.ok ? '' : 'no touch agent running'))
-  })
-  $('d-relaunch').addEventListener('click', () => {
-    if (!K || !K.relaunch) return actMsg('(not running inside the kiosk app)')
-    actMsg('relaunching…')
-    K.relaunch()
+    if (!K || !K.rescan) return
+    K.rescan()
   })
 
-  // ---- panel wizard ---------------------------------------------------------
-  let wizard = null // last successful derivation
+  // ---- raw descriptor dump (step 3's fallback) ---------------------------------
   const wMsg = (t) => { $('w-msg').textContent = t }
   // Shared by "Detect panel layout" and "Save raw descriptors" — both send the
   // main process the exact same payload, so there is one place that builds it.
@@ -710,60 +913,6 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
       collections: JSON.parse(JSON.stringify(d.collections)),
     }))
   }
-  $('w-detect').addEventListener('click', async () => {
-    if (!K || !K.deriveLayout) return wMsg('(not running inside the kiosk app)')
-    if (!navigator.hid) return wMsg('WebHID is not available in this window')
-    if ($('w-detect').disabled) return // ignore a double-click mid-request
-    $('w-detect').disabled = true
-    $('w-save').hidden = true; $('w-out').hidden = true; wizard = null
-    wMsg('reading descriptors…')
-    try {
-      let payload
-      try {
-        payload = await collectHidDevices()
-      } catch (err) {
-        return wMsg('WebHID error: ' + err.message)
-      }
-      let r
-      try {
-        r = await K.deriveLayout(payload)
-      } catch (err) {
-        return wMsg('deriveLayout failed: ' + err.message)
-      }
-      if (!r.ok) {
-        // Derivation failed — the descriptors just read are the only material
-        // left to work from, and the panel may not be available again. Show
-        // them on screen (textContent only: device-supplied strings are in
-        // here) and point at the escape hatch instead of leaving just the
-        // error message.
-        $('w-out').textContent = JSON.stringify(payload, null, 2)
-        $('w-out').hidden = false
-        return wMsg(r.error + ' — use "Save raw descriptors" below to keep what was just read')
-      }
-      wizard = r
-      $('w-out').textContent =
-        JSON.stringify({ hidVendorId: r.vendorId, hidProductId: r.productId, touchReport: r.layout }, null, 2) +
-        (r.warnings.length ? '\n\n' + r.warnings.map((w) => '⚠ ' + w).join('\n') : '')
-      $('w-out').hidden = false
-      $('w-save').hidden = false
-      wMsg('derived from ' + (r.productName || 'panel') + ' — check the block, then save')
-    } finally {
-      $('w-detect').disabled = false
-    }
-  })
-  $('w-save').addEventListener('click', () => {
-    if (!wizard || !K || !K.savePanel) return
-    if ($('w-save').disabled) return // ignore a double-click — savePanel reloads this window
-    $('w-save').disabled = true
-    wMsg('saving — the page reloads with the new panel…')
-    K.savePanel({ hidVendorId: wizard.vendorId, hidProductId: wizard.productId, touchReport: wizard.layout })
-      .catch((err) => {
-        // on success the window is destroyed and this page reloads — a rejection
-        // is the only case that leaves us around to handle it
-        $('w-save').disabled = false
-        wMsg('save failed: ' + err.message)
-      })
-  })
   // Standalone escape hatch: works whether or not a derivation ever succeeded,
   // so someone can capture the descriptors and hand them off even when the
   // wizard itself has nothing to save.
@@ -823,6 +972,7 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
   }
 
   function sRenderPorts(ports) {
+    $('s-find-row').hidden = true
     const ul = $('s-ports'); ul.innerHTML = ''
     if (!ports.length) {
       const li = document.createElement('li'); li.className = 's-empty'
@@ -887,19 +1037,18 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
     sRenderAccepted([])
   }
 
-  $('s-search').addEventListener('click', async () => {
-    if (!K || !K.pickSerialPort) return sMsg('(not running inside the kiosk app)')
-    if (!navigator.serial) return sMsg('Web Serial is not available in this window')
-    if ($('s-search').disabled) return
-    $('s-search').disabled = true
+  // The chooser opens when the step does and stays open: a device plugged in
+  // now appears in the list. Leaving the step answers Electron's parked
+  // callback, so nothing is left hanging.
+  let sChooserOpen = false
+  async function sOpenChooser() {
+    if (!K || !K.pickSerialPort || !navigator.serial || sChooserOpen) return
+    sChooserOpen = true
     await sCloseProbe()
     $('s-probe').hidden = true
     $('s-ports').innerHTML = ''
-    $('s-chooser').hidden = false
-    sMsg('looking for ports…')
     try {
       sPort = await navigator.serial.requestPort()
-      $('s-chooser').hidden = true
       sBytes = 0; sText = ''
       $('s-bytes').textContent = '0'
       $('s-data').textContent = '— scan or send something —'
@@ -908,15 +1057,30 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
       sMsg('port open — scan or send something to confirm it is the right device')
       sOpenProbe().catch((err) => sMsg('could not open the port: ' + err.message))
     } catch (err) {
-      $('s-chooser').hidden = true
       sPort = null
-      sMsg(err && err.name === 'NotFoundError' ? 'cancelled' : 'error: ' + (err && err.message))
+      // Chromium only shows a port request on a user gesture (measured in the
+      // packaged app: SecurityError when the step activates by itself). The
+      // automatic attempt still works right after a tap on Accept, Discard or
+      // Change; otherwise the operator presses the button.
+      if (err && err.name === 'SecurityError') { $('s-find-row').hidden = false; sMsg('') }
+      else if (!(err && err.name === 'NotFoundError')) sMsg('error: ' + (err && err.message))
     } finally {
-      $('s-search').disabled = false
+      sChooserOpen = false
     }
+  }
+  function sLeave() { if (sChooserOpen && K && K.pickSerialPort) K.pickSerialPort(null) }
+  stepHooks.serial = () => { sMsg(''); sOpenChooser() }
+  $('s-find').addEventListener('click', () => { $('s-find-row').hidden = true; sOpenChooser() })
+  renderExtras.push((steps) => {
+    const st = steps.find((x) => x.id === 'serial')
+    const shown = st.state === 'active' || st.state === 'blocked' || S.open === 'serial'
+    if (!shown) sLeave()
   })
-
-  $('s-cancel').addEventListener('click', () => { if (K && K.pickSerialPort) K.pickSerialPort(null) })
+  $('s-skip').addEventListener('click', () => {
+    if (!K || !K.save) return
+    sLeave()
+    K.save({ serialSkipped: true }).then(refreshInfo)
+  })
 
   $('s-baud').addEventListener('change', async () => {
     if (!sPort) return
@@ -936,12 +1100,15 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
     $('s-probe').hidden = true
     sRenderAccepted(r.devices)
     sMsg('accepted ' + name + ' — saved to ' + r.written)
+    await refreshInfo()
+    if (S.open === 'serial' || document.body.dataset.active === 'serial') sOpenChooser() // a second device may follow
   })
 
   $('s-discard').addEventListener('click', async () => {
     await sCloseProbe(); sPort = null
     $('s-probe').hidden = true
     sMsg('')
+    sOpenChooser()
   })
 
   // ---- log file -----------------------------------------------------------------
@@ -952,8 +1119,32 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
     $('d-openlogs').disabled = true
   }
 
-  if (K && K.onDiag) K.onDiag(onDiag)
-  else $('d-status').textContent = '(not running inside the kiosk app — no diagnostics)'
+  // ---- back to the kiosk --------------------------------------------------------
+  // From a diagnostics visit (URL already set) there is a way straight back —
+  // and after ten minutes without input the page takes it by itself, so a
+  // technician who walks away leaves no checklist in front of visitors.
+  // First-time setup (no URL yet) is never interrupted.
+  renderExtras.push(() => { $('back-kiosk').hidden = !(S.info && S.info.config.url) })
+  $('back-kiosk').addEventListener('click', () => { if (K && K.launch) K.launch({}) })
+  const IDLE_MS = 10 * 60 * 1000
+  let idleTimer = null
+  const armIdle = () => {
+    clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => {
+      if (S.info && S.info.config.url && K && K.launch) K.launch({})
+    }, IDLE_MS)
+  }
+  for (const t of ['pointerdown', 'keydown']) window.addEventListener(t, armIdle, true)
+  armIdle()
+
+  if (K && K.onDiag) {
+    K.onDiag(onDiag)
+    refreshInfo()
+  } else {
+    S.info = { config: {}, displays: [] }
+    document.querySelector('.lede').textContent = '(not running inside the kiosk app — no setup, test targets only)'
+    $('tryout').hidden = false
+  }
 
   function geom() { $('t-vp').textContent = innerWidth + '×' + innerHeight; $('t-dpr').textContent = devicePixelRatio }
   geom(); addEventListener('resize', geom)

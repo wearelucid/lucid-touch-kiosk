@@ -24,7 +24,7 @@ So, inside the browser you get native touch with everything you'd expect it to h
 - **Mac with Apple Silicon.** Built arm64-only; universal binaries break
   node-hid's device opening.
 - **USB HID touchscreen.** Windows-Precision-style panels are profiled
-  automatically by the built-in wizard; others can be
+  automatically by the setup checklist; others can be
   [described by hand](#supporting-a-different-touchscreen).
 - **Input Monitoring permission.** macOS lets any process list HID devices but
   not open one. Until it is granted, the panel appears in every diagnostic and
@@ -38,40 +38,40 @@ it. Put the app wherever suits the machine — the Desktop, or a folder of its
 own. Its `config.json` will appear next to it, so app and settings stay
 together and can be copied to the next kiosk as one folder.
 
-The app is **not signed or notarised**, so macOS quarantines it on download.
-Clear that flag once, in Terminal:
+Releases are signed with Lucid's Developer ID and notarised by Apple, so the
+app opens like any other download.
 
-```sh
-xattr -dr com.apple.quarantine "path/to/Lucid Touch Kiosk.app"
-```
+Open the app. It shows a five-step checklist on the touchscreen's display and
+ticks the steps off as they are satisfied:
 
-Then grant the permission the app needs to read the panel. It will ask on first launch. If skipped:
+1. **Display** — chosen automatically when there is one external display.
+2. **Permission** — macOS asks for *Input Monitoring*; click **Allow**. If you
+   missed it: **Open System Settings**, enable the app, then **Relaunch app**
+   (a grant does not reach a running app). The Bluetooth prompt may be
+   declined — the panel is USB.
+3. **Touch panel** — found and profiled on its own from its HID descriptor.
+   Tap the four corners and the centre to confirm it (and the display, and the
+   mounting rotation).
+4. **Serial devices** — optional. Plug in a printer or scanner, **Test**,
+   **Accept**. Or **No devices, continue**.
+5. **URL and start** — type the URL, **Check** it, **Start kiosk**.
 
-1. **System Settings → Privacy & Security → Input Monitoring**, and enable
-   Lucid Touch Kiosk (use **+** to add it if it isn't listed).
-2. Relaunch. A permission granted while the app runs does not reach it.
-
-Without Input Monitoring, macOS refuses to let the app open the panel: the
-touchscreen shows up in every diagnostic and still delivers no touch.
-
-macOS 14+ also asks about Bluetooth, because node-hid scans it while
-enumerating devices. The panel is USB, so **Don't Allow** is fine.
-
-> Without the `xattr` command, macOS blocks the first launch. The **Open
-> Anyway** button in System Settings → Privacy & Security only appears
-> immediately after such a blocked attempt, which makes it easy to miss —
-> hence the Terminal route above.
+To get back into the checklist from the running kiosk: press **⌘⇧,** or hold
+**five fingers** still on the screen for three seconds (panels that report
+five or more contacts). After ten minutes without input the kiosk returns on
+its own.
 
 ### First run
 
-1. Pick the display the touchscreen is connected to.
-2. The test page opens there fullscreen. It has touch targets (tap, scroll,
-   pinch, drag), the [diagnostics panel](#when-touch-doesnt-work), and fields
-   for URL, zoom and touch rotation. Press Launch to open the kiosk; a blank
-   URL keeps the test page.
+The checklist above is the whole first run. Below it, once the panel is open,
+the page offers touch targets (tap, scroll, pinch, drag) to try the panel on,
+and step 3's *Details* holds the [diagnostics](#when-touch-doesnt-work). When
+several displays could be the touchscreen's, a small window asks first.
 
 Each choice is written to `config.json` as it is made — see
-[Configuration](#configuration) for where that file lives.
+[Configuration](#configuration) for where that file lives. The same checklist
+is what you see again later when something is wrong: the broken step is the
+one that is not ticked.
 
 If the page can't be loaded — typically right after login, before the network
 is up — the kiosk keeps retrying (after 2, 4, 8 s, then every 30 s) until it
@@ -100,14 +100,17 @@ account. Installed there, the config goes to Application Support for everyone.
 | Key / env | Default | Meaning |
 | --- | --- | --- |
 | `url` / `KIOSK_URL` | `""` | Page to show. Blank opens the built-in test page. |
-| `hidVendorId`, `hidProductId` | `0x0457`, `0x6595` (SiS) | Touchscreen USB ids |
+| `hidVendorId`, `hidProductId` | `null` = none chosen yet | Touchscreen USB ids; step 3 of the checklist fills them in |
 | `touchReport` | SiS layout | Bit layout of the touch report — [see below](#supporting-a-different-touchscreen) |
+| `touchVerified` | `false` | The five corner taps landed on this panel; reset whenever the panel changes |
 | `touchRotation` / `TOUCH_ROTATION` | `null` = follow the display | `0`/`90`/`180`/`270` for a panel mounted sideways |
 | `displayIndex` / `DISPLAY_INDEX` | `1` | Monitor to open on (see `display[N]` in the startup log) |
 | `zoom` / `ZOOM` | `1` | Page zoom (`2.5` = 250%); touch stays aligned |
 | `maxTouchPoints` / `MAX_TOUCH_POINTS` | `10` | `1` disables multitouch entirely |
 | `allowPageZoom` / `ALLOW_PAGE_ZOOM` | `false` | `false` blocks pinch-zoom and overscroll bounce, keeps scroll and in-page multitouch |
+| `hideCursor` / `HIDE_CURSOR` | `false` | Hide the mouse pointer on the kiosk page (checkbox in setup step 5). The setup page keeps it |
 | `serialDevices` | `[]` | Serial devices the kiosk page may use — [see below](#serial-devices) |
+| `serialSkipped` | `false` | "No serial devices" was chosen in setup |
 
 ### Rotated and portrait panels
 
@@ -123,15 +126,13 @@ touch foil mounted turned relative to its display. Rotation sits outside
 
 ### Supporting a different touchscreen
 
-Use the panel wizard: test page → 7 · Touch panel diagnostics → Details →
-Panel wizard.
-
-1. **Detect panel layout** reads the panel's HID report descriptor via WebHID
-   (Chromium can parse it; node-hid on macOS cannot) and derives the
-   `touchReport` block, showing a JSON preview and any warnings.
-2. **Save & use this layout** writes the ids and layout to `config.json` and
-   restarts the touch agent on the new panel.
-3. Touch the screen and check Live reports. Parsed contacts confirm the layout.
+Step 3 of the checklist does this on its own: it reads the panel's HID report
+descriptor via WebHID (Chromium can parse it; node-hid on macOS cannot),
+derives `hidVendorId`/`hidProductId` and the `touchReport` block, writes them
+to `config.json` and restarts the touch agent on the new panel. With several
+touchscreens connected it asks which one; with a panel already configured it
+offers the newly found one instead of replacing silently. Touch the screen and
+check *Details → Live reports*: parsed contacts confirm the layout.
 
 Verified end-to-end on a Samsung Flip (`25b5:0054`), which is a useful second
 reference because its axes have different ranges — the case `logicalMaxY`
@@ -176,16 +177,17 @@ the Web Serial API. In Chrome, `navigator.serial.requestPort()` opens a dialog
 where the user picks a port. The kiosk shows no dialog: visitors stand in front
 of it. Instead, devices are accepted once on the test page:
 
-1. Test page → 8 · Serial devices → **Search serial devices**. All serial ports
-   appear, including ones plugged in afterwards.
+1. Step 4 of the checklist lists all serial ports, including ones plugged in
+   while it is open.
 2. **Test** opens a port and shows what it sends; scan or send something to
    confirm it's the right device.
 3. **Accept device** stores it in `config.json`.
 
 From then on the kiosk page receives the accepted device without a dialog, both
 when it calls `requestPort()` and when it calls `getPorts()` to reconnect after
-a restart. Only the origin of the configured `url` gets access; a page the
-kiosk navigates to elsewhere does not.
+a restart. Only the origin of the configured `url` gets access (an `http://`
+URL also covers its `https://` upgrade, since most sites redirect there); a
+page the kiosk navigates to elsewhere does not.
 
 Devices are stored by USB vendor and product id, not serial number, so a
 replacement unit of the same model works without setting it up again. The baud
@@ -277,11 +279,29 @@ npm run dist    # → dist/mac-arm64/Lucid Touch Kiosk.app
 
 If node-hid throws `NODE_MODULE_VERSION`, run `npm run rebuild`.
 
-A locally built app is unsigned too, so it needs the same unblocking as a
-downloaded one. The Input Monitoring grant is bound to the exact binary, so
-after each `npm run dist` the entry has to be removed and re-added. Signing
-with an Apple Developer ID would make both grants persist and remove the
-Gatekeeper step entirely.
+`npm run dist` signs the app with the *Developer ID Application* certificate
+in your login keychain (Hardened Runtime, entitlements in
+`build/entitlements.mac.plist`) and produces both the `.app` and the release
+zip. Without such a certificate electron-builder falls back to an unsigned
+build, which macOS blocks on first launch — clear it with
+`xattr -dr com.apple.quarantine "dist/mac-arm64/Lucid Touch Kiosk.app"`.
+
+Notarisation runs as part of the build when credentials are present. Store
+them once in the keychain:
+
+```sh
+xcrun notarytool store-credentials "lucid-notary" --apple-id "you@example.com" --team-id "R8H8B94FZJ"
+```
+
+then build with `APPLE_KEYCHAIN_PROFILE=lucid-notary npm run dist`. Without
+the variable the build logs "skipped macOS notarization" and the result is
+signed but not notarised — fine for the development machine, not for a
+release. Check a release build with
+`spctl -a -vv "dist/mac-arm64/Lucid Touch Kiosk.app"`: it must say
+`source=Notarized Developer ID`.
+
+Because macOS binds the Input Monitoring grant to the signing identity rather
+than to the binary's hash, a signed build keeps the grant across rebuilds.
 
 ## How it works
 
