@@ -108,6 +108,7 @@ account. Installed there, the config goes to Application Support for everyone.
 | `zoom` / `ZOOM` | `1` | Page zoom (`2.5` = 250%); touch stays aligned |
 | `maxTouchPoints` / `MAX_TOUCH_POINTS` | `10` | `1` disables multitouch entirely |
 | `allowPageZoom` / `ALLOW_PAGE_ZOOM` | `false` | `false` blocks pinch-zoom and overscroll bounce, keeps scroll and in-page multitouch |
+| `hideCursor` / `HIDE_CURSOR` | `false` | Hide the mouse pointer on the kiosk page (checkbox in setup step 5). The setup page keeps it |
 | `serialDevices` | `[]` | Serial devices the kiosk page may use — [see below](#serial-devices) |
 | `serialSkipped` | `false` | "No serial devices" was chosen in setup |
 
@@ -184,8 +185,9 @@ of it. Instead, devices are accepted once on the test page:
 
 From then on the kiosk page receives the accepted device without a dialog, both
 when it calls `requestPort()` and when it calls `getPorts()` to reconnect after
-a restart. Only the origin of the configured `url` gets access; a page the
-kiosk navigates to elsewhere does not.
+a restart. Only the origin of the configured `url` gets access (an `http://`
+URL also covers its `https://` upgrade, since most sites redirect there); a
+page the kiosk navigates to elsewhere does not.
 
 Devices are stored by USB vendor and product id, not serial number, so a
 replacement unit of the same model works without setting it up again. The baud

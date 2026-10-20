@@ -4,6 +4,7 @@ const {
   originOf,
   sameDevice,
   pickAcceptedPort,
+  sameSite,
   serialAllowed,
   addDevice,
   removeDevice,
@@ -58,6 +59,26 @@ test('serialAllowed: accepted device, configured kiosk origin', () => {
   const base = { device: { vendorId: '3118', productId: '3480' }, devices: [HONEYWELL] }
   assert.ok(serialAllowed({ ...base, origin: 'https://tbf.ch', kioskOrigin: 'https://tbf.ch' }))
   assert.ok(!serialAllowed({ ...base, origin: 'https://evil.example', kioskOrigin: 'https://tbf.ch' }))
+})
+
+// Measured: config.url "http://www.tbf.ch/…" → the site redirects to https://,
+// the page asked from "https://www.tbf.ch" and every request was refused.
+test('sameSite: an https upgrade of the configured http host is the same site', () => {
+  assert.ok(sameSite('https://www.tbf.ch', 'http://www.tbf.ch'))
+  assert.ok(sameSite('https://tbf.ch', 'https://tbf.ch'))
+  // never the other way round, never another host, never another port
+  assert.ok(!sameSite('http://www.tbf.ch', 'https://www.tbf.ch'))
+  assert.ok(!sameSite('https://tbf.ch', 'http://www.tbf.ch'))
+  assert.ok(!sameSite('https://www.tbf.ch:8443', 'http://www.tbf.ch'))
+  assert.ok(!sameSite('https://evil.example', 'http://www.tbf.ch'))
+  assert.ok(!sameSite('', 'http://www.tbf.ch'))
+  assert.ok(!sameSite('https://www.tbf.ch', ''))
+})
+
+test('serialAllowed: follows the kiosk url through an https redirect', () => {
+  const base = { device: { vendorId: '3118', productId: '3480' }, devices: [HONEYWELL] }
+  assert.ok(serialAllowed({ ...base, origin: 'https://www.tbf.ch', kioskOrigin: 'http://www.tbf.ch' }))
+  assert.ok(!serialAllowed({ ...base, origin: 'http://www.tbf.ch', kioskOrigin: 'https://www.tbf.ch' }))
 })
 
 test('serialAllowed: the bundled test page may open any port — before it is accepted', () => {

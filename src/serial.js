@@ -38,6 +38,25 @@ function sameDevice(a, b) {
   return Number.isFinite(av) && Number.isFinite(ap) && av === vendorOf(b) && ap === productOf(b)
 }
 
+/**
+ * Is `origin` the configured kiosk site? Equal origins, or the https version of
+ * a kiosk URL that was configured as http: — sites redirect http → https, and
+ * the page then asks from the https origin (measured with http://www.tbf.ch).
+ * Only that upgrade is tolerated: same host, same port, never a downgrade.
+ */
+function sameSite(origin, kioskOrigin) {
+  if (!origin || !kioskOrigin) return false
+  if (origin === kioskOrigin) return true
+  let a, k
+  try {
+    a = new URL(origin)
+    k = new URL(kioskOrigin)
+  } catch {
+    return false
+  }
+  return k.protocol === 'http:' && a.protocol === 'https:' && a.host === k.host
+}
+
 /** Is this the app's own bundled page (test page)? */
 const isBundled = (origin) => typeof origin === 'string' && origin.startsWith('file:')
 
@@ -68,7 +87,7 @@ function pickAcceptedPort(portList, devices) {
  */
 function serialAllowed({ origin, device, kioskOrigin, devices }) {
   if (isBundled(origin)) return true
-  return Boolean(kioskOrigin) && origin === kioskOrigin && isAccepted(device, devices)
+  return sameSite(origin, kioskOrigin) && isAccepted(device, devices)
 }
 
 const normalize = (d) => ({
@@ -88,4 +107,4 @@ function removeDevice(devices, device) {
   return (devices || []).filter((d) => !sameDevice(d, device))
 }
 
-module.exports = { originOf, isBundled, sameDevice, pickAcceptedPort, serialAllowed, addDevice, removeDevice }
+module.exports = { originOf, isBundled, sameDevice, sameSite, pickAcceptedPort, serialAllowed, addDevice, removeDevice }

@@ -124,6 +124,8 @@ h2 {
 .cfgbar input:focus, .cfgbar select:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
 .cfgbar #cfg-url { width: 320px; max-width: 60vw; }
 .cfgbar #cfg-zoom { width: 88px; }
+.cfgbar label.check { flex-direction: row; align-items: center; gap: 8px; padding-bottom: 12px; }
+.cfgbar label.check input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--ink); }
 #launch {
   background: var(--ink); color: var(--paper); border: 0;
   border-radius: var(--radius-sm); padding: 12px 22px;
@@ -428,6 +430,7 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
         <div class="cfgbar">
           <label>URL <input id="cfg-url" placeholder="kiosk.example.org/start" /></label>
           <label>Zoom <input id="cfg-zoom" type="number" min="0.5" max="5" step="0.25" value="1" /></label>
+          <label class="check"><input id="cfg-cursor" type="checkbox" /> Hide mouse pointer</label>
           <button id="url-check">Check</button>
           <button id="launch" class="primary">Start kiosk ▶</button>
           <button id="back-kiosk" hidden>Back to kiosk</button>
@@ -695,6 +698,7 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
   const q = new URLSearchParams(location.search)
   if (q.get('url')) $('cfg-url').value = q.get('url')
   if (q.get('zoom')) $('cfg-zoom').value = q.get('zoom')
+  $('cfg-cursor').checked = q.get('hideCursor') === '1'
   // live zoom preview — applies to this page as you change the field
   const applyZoom = () => {
     const z = parseFloat($('cfg-zoom').value) || 1
@@ -715,6 +719,8 @@ input[type=range] { touch-action: none; flex: 1; accent-color: var(--ink); }
     render()
   })
   $('cfg-zoom').addEventListener('change', () => save({ zoom: parseFloat($('cfg-zoom').value) || 1 }).then(refreshInfo))
+  // Kiosk only — this page is worked with a mouse, so the pointer stays here.
+  $('cfg-cursor').addEventListener('change', () => save({ hideCursor: $('cfg-cursor').checked }).then(refreshInfo))
   $('cfg-url').addEventListener('change', () => { S.open = 'url'; save({ url: $('cfg-url').value.trim() }).then(refreshInfo) })
   // Never disabled by a failed Check: an intranet host may be down right now
   // and fine at boot, and the kiosk reloads with backoff anyway.

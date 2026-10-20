@@ -12,7 +12,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { startTouchAgent } = require('./touch-agent')
 const { resolveRotation } = require('./parse')
-const { originOf, isBundled, pickAcceptedPort, serialAllowed, addDevice, removeDevice } = require('./serial')
+const { originOf, isBundled, sameSite, pickAcceptedPort, serialAllowed, addDevice, removeDevice } = require('./serial')
 const { deriveFromDevices, deriveAllDevices } = require('./derive')
 const { pickDisplay } = require('./setup-state')
 const { verdictFromResponse, verdictFromError } = require('./urlcheck')
@@ -68,6 +68,7 @@ const DEFAULTS = {
   hidProductId: null,
   maxTouchPoints: 10,
   allowPageZoom: false,
+  hideCursor: false, // kiosk only: the setup page always keeps the pointer
   displayIndex: 1,
   zoom: 1,
   touchRotation: null, // null = follow the display's rotation; 0|90|180|270 overrides
@@ -125,6 +126,7 @@ function applyEnv(cfg) {
   if (process.env.KIOSK_URL) cfg.url = process.env.KIOSK_URL
   if (process.env.MAX_TOUCH_POINTS) cfg.maxTouchPoints = Number(process.env.MAX_TOUCH_POINTS)
   if (process.env.ALLOW_PAGE_ZOOM) cfg.allowPageZoom = true
+  if (process.env.HIDE_CURSOR) cfg.hideCursor = process.env.HIDE_CURSOR !== '0'
   if (process.env.DISPLAY_INDEX) cfg.displayIndex = Number(process.env.DISPLAY_INDEX)
   if (process.env.ZOOM) cfg.zoom = Number(process.env.ZOOM)
   if (process.env.TOUCH_ROTATION) cfg.touchRotation = Number(process.env.TOUCH_ROTATION)
@@ -318,6 +320,16 @@ function createKioskWindow(config, { test } = {}) {
   }
 
   wc.once('dom-ready', startAgent)
+  if (!test && config.hideCursor) {
+    // A kiosk is set up with a mouse, so the pointer sits wherever it was last
+    // left — and a digitizer macOS also sees as a mouse drags it along under
+    // every touch. There is no native hide in Electron and no CDP flag, so it's
+    // CSS: on every dom-ready, because each navigation starts a fresh document,
+    // and `!important` on `*` so the page cannot bring it back.
+    wc.on('dom-ready', () => {
+      wc.insertCSS('*, *::before, *::after { cursor: none !important }').catch(() => {})
+    })
+  }
   wc.debugger.on('message', (_e, method, params) => {
     // Runtime.enable reports the execution context first, then replays the
     // console messages from before it (order measured).
@@ -392,6 +404,7 @@ function createKioskWindow(config, { test } = {}) {
       query: {
         url: config.url || '',
         zoom: String(config.zoom || 1),
+        hideCursor: config.hideCursor ? '1' : '0',
         rot: config.touchRotation == null ? 'auto' : String(config.touchRotation),
       },
     })
@@ -543,7 +556,7 @@ function setupDevicePermissions() {
       sendSerialPorts()
       return
     }
-    if (origin && origin === kioskOrigin()) {
+    if (sameSite(origin, kioskOrigin())) {
       const id = pickAcceptedPort(portList, serialDevices())
       if (id) logSerialGrant(origin, portList.find((p) => p.portId === id))
       if (!id)
@@ -584,6 +597,7 @@ ipcMain.handle('kiosk:save', (_e, p = {}) => {
   const previousDisplay = pending.displayIndex
   if (typeof p.url === 'string') pending.url = p.url.trim()
   if (p.zoom) pending.zoom = Number(p.zoom) || 1
+  if (typeof p.hideCursor === 'boolean') pending.hideCursor = p.hideCursor
   if (Number.isInteger(p.displayIndex)) pending.displayIndex = p.displayIndex
   if ('touchRotation' in p) {
     // null puts it back to following the display; a number overrides. Applied
@@ -595,7 +609,7 @@ ipcMain.handle('kiosk:save', (_e, p = {}) => {
   if (typeof p.touchVerified === 'boolean') pending.touchVerified = p.touchVerified
   if (typeof p.serialSkipped === 'boolean') pending.serialSkipped = p.serialSkipped
   const written = writeConfig(pending)
-  log('saved config', written, '·', JSON.stringify({ url: pending.url, zoom: pending.zoom }))
+  log('saved config', written, '·', JSON.stringify({ url: pending.url, zoom: pending.zoom, hideCursor: pending.hideCursor }))
   // A new display means a new window; the setup page comes back on it.
   if (Number.isInteger(p.displayIndex) && p.displayIndex !== previousDisplay)
     createKioskWindow(pending, { test: true })
