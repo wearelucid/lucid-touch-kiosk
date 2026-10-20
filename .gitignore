@@ -8,3 +8,6 @@ config.json
 
 # written next to the app (and in the project root in dev)
 logs/
+
+# compiled from build/AppIcon.icon by scripts/compile-icon.js (npm predist)
+build/compiled-icon/

@@ -20,6 +20,8 @@
     "start": "electron .",
     "rebuild": "electron-rebuild -f -w node-hid",
     "postinstall": "electron-rebuild -f -w node-hid",
+    "icon": "node scripts/compile-icon.js",
+    "predist": "npm run icon",
     "dist": "electron-builder",
     "test": "node --test test/*.test.js"
   },
@@ -56,6 +58,7 @@
           ]
         }
       ],
+      "icon": "build/compiled-icon/AppIcon.icns",
       "artifactName": "LucidTouchKiosk-${version}-${arch}.${ext}",
       "electronLanguages": [
         "en"
@@ -67,8 +70,15 @@
       "entitlementsInherit": "build/entitlements.mac.plist",
       "notarize": true,
       "extendInfo": {
-        "NSBluetoothAlwaysUsageDescription": "Not used. The HID library enumerates input devices, which touches the Bluetooth API on macOS; you can deny this — the USB touchscreen still works."
+        "NSBluetoothAlwaysUsageDescription": "Not used. The HID library enumerates input devices, which touches the Bluetooth API on macOS; you can deny this — the USB touchscreen still works.",
+        "CFBundleIconName": "AppIcon"
       }
-    }
+    },
+    "extraResources": [
+      {
+        "from": "build/compiled-icon/Assets.car",
+        "to": "Assets.car"
+      }
+    ]
   }
 }
